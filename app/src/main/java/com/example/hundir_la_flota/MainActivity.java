@@ -76,7 +76,7 @@ public class MainActivity extends AppCompatActivity {
             int alt = dibuix.getHeight ();
 
             // espacio entre lineas
-            float espacio = alt/10; // solo uno porque como el tablero es cuadrado es lo mismo para los dos
+            float espacio = alt/10f; // solo uno porque como el tablero es cuadrado es lo mismo para los dos
 
             Canvas canvas = dibuix.getHolder().lockCanvas(); // bloquea el lienzo para dibujar
             canvas.drawColor(Color.rgb(197, 227, 230)); // color del fondo
@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
             // dibujamos las lineas (9 porque el tablero es 10x10)
             float x = 0;
             for (int i = 0; i < 9; i++) {
-                x = x + espacio;
+                x += espacio;
                 canvas.drawLine(x, 0, x, alt, p); // lineas verticales
                 canvas.drawLine(0, x, alt, x, p); // lineas horizontales
             }
