@@ -1,3 +1,12 @@
 <resources>
-    <string name="app_name">Hundir_la_flota</string>
+    <string name="app_name">Enfonsar la flota</string>
+    <string name="textViewDJM">Darrera jugada meva:</string>
+    <string name="textViewDJM2">Els teus vaixells</string>
+    <string name="textViewDJR">Darrera jugada seva:</string>
+    <string name="textViewDJR2">Els teus intents</string>
+    <string name="missatges">Missatges:</string>
+    <string name="botonNuevo">Boton para iniciar una nueva partida</string>
+    <string name="botonAtura">Boton para terminar la partida actual </string>
+    <string name="botonPista">boton para obtener la posicion de todos los barcos</string>
+    <string name="botonConnecta">Boton para jugar online</string>
 </resources>
