@@ -67,7 +67,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Método para pintar en los suface view de los tableros
+     * Dibuja la cuadricula del 10x10 inicial del tablero
      * @param dibuix SurfaceView sobre el que se va a dibujar
      */
     private void pintarTauler(SurfaceView dibuix) {
@@ -99,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Método para activar/desactivar botones segun el estado actual
+     * Metodo para activar/desactivar botones segun el estado actual
      */
     private void actualizarBotones() {
         if (estatActual == estatJoc.ATURADA) {
