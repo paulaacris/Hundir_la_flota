@@ -16,6 +16,8 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.sun.org.apache.bcel.internal.generic.BREAKPOINT;
+
 public class MainActivity extends AppCompatActivity {
 
     enum estatJoc { JUGANT, ATURADA } // porque solo hay dos estados posibles
@@ -23,6 +25,8 @@ public class MainActivity extends AppCompatActivity {
     private Button btnNouJoc, btnConnectar, btnAturar, btnPista; // declarar los botones para acceder a ellos desde cualquier metodo
     private TextView tvMissatges;
     private SurfaceView tauler1, tauler2;
+    private String s = ""; //String on s'emmagatzema l'info del textview missatges
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,5 +127,63 @@ public class MainActivity extends AppCompatActivity {
             btnPista.setEnabled(true);
             btnPista.setAlpha(1.0f);
         }
+    }
+
+    /**
+     * Método para detectar cuando el usuario toca la pantalla.
+     * @param event: evento que llega cuando se llama al método
+     * @return true si ha ido bien, false en caso contrario
+     */
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        float cursorX, cursorY, tableroX, tableroY;
+        int coordX, coordY;
+        tablero = findViewById(R.id.tauler2);
+
+
+        // a través de la variable event obtenemos la posición actual del cursor
+        cursorX = event.getX();
+        cursorY = event.getY();
+
+        // determinamos qué acción se ha hecho en la pantalla
+        switch (event.getAction() && MotionEvent.ACTION_MASK) {
+            case MotionEvent.ACTION_DOWN: // al apretar con el dedo
+                break;
+            case MotionEvent.ACTION_UP: // al levantar el dedo - ahora nos interesa este
+                // propiedades (coordenadas) del SurfaceView dentro de la pantalla:
+                coordX = tablero.getX(); // esquina superior izquierda
+                coordY = tablero.getY(); // esquina superior derecha
+                amplada = tablero.getWidth(); // anchura
+                altura = tablero.getHeight(); // altura
+
+                //sólo nos interesa gestionar el click si está dentro del tablero rival
+                if (((coordX <= cursorX) && (cursorX <= amplada)) && (coordY <= cursorY) && (cursorY <= altura)) {
+                    //a partir de la posición tocada la pasamos a coordenadas dentro del SurfaceView
+
+                }
+
+
+
+
+                break;
+
+        }
+    }
+
+    /**
+     * Mètode que calcula les coordenades (i,j) de la casella de la graella corresponent a les
+     * coordenades de la pantalla i retorna aquesta casella.
+     * @param x coordenada x del punt tocat
+     * @param y coordenada y del punt tocat
+     * @param s SurfaceView del tauler
+     * @return objecte Casella amb les coordenades dins del tauler
+     */
+    private Casella getCasella(float x, float y, SurfaceView s) {
+        int i,j;
+
+        i = x - s.getX();
+        j = y - s.getY();
+
+        return new Casella(i,j);
     }
 }
