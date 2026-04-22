@@ -24,7 +24,6 @@ public class MainActivity extends AppCompatActivity {
     private Button btnNouJoc, btnConnectar, btnAturar, btnPista; // declarar los botones para acceder a ellos desde cualquier metodo
     private TextView tvMissatges, tvDarreraJugadaMeva;
     private SurfaceView tauler1, tauler2;
-    private String s = ""; //String on s'emmagatzema l'info del textview missatges
 
 
     @Override
@@ -56,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
 
         // vincular TextViews del xml
         tvMissatges = findViewById(R.id.missatges);
-        tvDarreraJugadaPropia = findViewById(R.id.textViewDJP);
+        tvDarreraJugadaMeva = findViewById(R.id.textViewDJM);
 
         // establecemos que botones estan activos al empezar
         actualizarBotones();
@@ -109,10 +108,8 @@ public class MainActivity extends AppCompatActivity {
      * @return true si ha ido bien, false en caso contrario
      */
     public boolean onTouchEvent (MotionEvent event){
-        float cursorX, cursorY;
-
-        cursorX = event.getX();
-        cursorY = event.getY();
+        float cursorX = event.getX();
+        float cursorY = event.getY();
 
         switch (event.getAction() & MotionEvent.ACTION_MASK) {
             // quan es pitja amb el dit
@@ -286,183 +283,5 @@ public class MainActivity extends AppCompatActivity {
 
             tauler2.getHolder().unlockCanvasAndPost(canvas2); // cerramos y pintamos
         }
-    }
-
-    /**
-     * Método para detectar y gestionar cuando el usuario toca la pantalla.
-     * @param event: evento que llega cuando se llama al método
-     * @return true si ha ido bien, false en caso contrario
-     */
-    @Override
-    public boolean onTouchEvent(MotionEvent event) {
-        float cursorX, cursorY; //coordenadas x,y del punto tocado en pantalla
-
-        // a través de la variable event obtenemos la posición actual del cursor
-        cursorX = event.getX();
-        cursorY = event.getY();
-
-        // determinamos qué acción se ha hecho en la pantalla
-        switch (event.getAction() & MotionEvent.ACTION_MASK) {
-            case MotionEvent.ACTION_DOWN: // al apretar con el dedo
-                break;
-
-            case MotionEvent.ACTION_UP: // al levantar el dedo - ahora nos interesa este
-
-                /* sólo nos interesa gestionar el click si está dentro del tablero rival, llamamos al
-                método que calculará si el punto tocado está dentro de las coordenadas del tablero */
-                if ( dentroTablero(cursorX,cursorY,tauler2) ) {
-                    /* a partir de la posición tocada la pasamos a coordenadas dentro del SurfaceView
-                    y obtenemos la casilla del tablero correspondiente */
-                    Casella c = getCasella(cursorX, cursorY, tauler2);
-
-                    //canviam contingut del TextView de la darrera jugada pròpia
-                    tvDarreraJugadaPropia.setText("Darrera jugada teva: " + c.toString());
-                    //actualitzam info a la zona de missatges
-                    afegirMissatges("Has seleccionat la " + c.toString());
-
-                    //cridam al mètode que actualitza el tauler cada vegada que hagi un canvi
-                    pintarGraelles(tauler2, c);
-                }
-                break;
-        }
-        return true;
-    }
-
-    /**
-     * Mètode per repintar tot el tauler cada pic que hi hagi un canvi.
-     *  - esborra el que havia al tauler
-     *  - dibuixa la graella de caselles
-     *  - remarca la casella seleccionada
-     * @param c Casella pitjada per remarcar-la
-     */
-    public void pintarGraelles(SurfaceView dibuix, Casella c) {
-        if (dibuix.getHolder().getSurface().isValid()) {
-            Canvas canvas = dibuix.getHolder().lockCanvas();
-
-            /*
-            1. borrar lo anterior
-             */
-            canvas.drawColor(Color.WHITE); //pintar fondo
-
-            /*
-            2. lógica de pintar las líneas para formar la graella
-             */
-            int alt = dibuix.getHeight (); //altura tauler
-            float espacio = alt/10; //espacio entre lineas
-
-            canvas.drawColor(Color.rgb(197, 227, 230)); // color del fondo
-
-            // configurar el pincel
-            Paint p = new Paint();
-            p.setColor(Color.rgb(172, 217, 218)); // color del pincel
-            p.setStrokeWidth(5); // grosor del pincel
-
-            // dibujamos las lineas (9 porque el tablero es 10x10)
-            float x = 0;
-            for (int i = 0; i < 9; i++) {
-                x = x + espacio;
-                canvas.drawLine(x, 0, x, alt, p); // lineas verticales
-                canvas.drawLine(0, x, alt, x, p); // lineas horizontales
-            }
-
-            /*
-            3. remarcar la casilla seleccionada llamando al metodo pintar()
-             */
-            if (c != null) {
-                pintar(canvas, dibuix, c);
-            }
-
-            dibuix.getHolder().unlockCanvasAndPost(canvas); //dibujar
-        }
-    }
-
-    /**
-     * Mètode per pintar un requadre damunt una casella.
-     * @param dibuix
-     */
-    public void pintar(Canvas canvas, SurfaceView dibuix, Casella c) {
-        //recibimos el canvas ya abierto para que no haya un bloqueo en el metodo de pintar las graellas
-        Paint p = new Paint(); //pincel de dibujo
-
-        canvas.drawColor(Color.WHITE);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(5);
-        p.setColor(Color.parseColor("#EF2EA3"));
-
-        // sistema coordenadas de Canvas relativo al SurfaceView *******
-        float mida = dibuix.getWidth() / 10.0f; //mida d'una casella
-        float left = c.getColumna() * mida; // inicio X
-        float top = c.getFila() * mida; // inicio Y
-        float right = left + mida; // fin X
-        float bottom = top + mida; // fin Y
-
-        canvas.drawRoundRect(left,top,right,bottom,25,25,p);
-    }
-
-    /**
-     * Método booleano que comprueba si unas coordenadas están dentro de un SurfaceView
-     * @param x coordenada x del punt tocat
-     * @param y coordenada y del punt tocat
-     * @param s SurfaceView del tauler
-     * @return true si el punt tocat és dins del tauler
-     */
-    private boolean dentroTablero(float x, float y, SurfaceView s) {
-        // propiedades  del SurfaceView:
-        float esquinaX = s.getX(); // coordenada X de la esquina superior izquierda
-        float esquinaY = s.getY(); // coordenada Y de la esquina superior izquierda coord
-        float amplada = s.getWidth(); // anchura
-        float altura = s.getHeight(); // altura
-
-        //comprobamos que la x,y del punto están dentro
-        return (((esquinaX <= x) && (x <= amplada)) && ((esquinaY <= y) && (y <= altura)));
-    }
-
-    /**
-     * Mètode que calcula les coordenades (i,j) de la casella de la graella corresponent a les
-     * coordenades de la pantalla i retorna aquesta casella.
-     * @param x coordenada x del punt tocat
-     * @param y coordenada y del punt tocat
-     * @param s SurfaceView del tauler
-     * @return objecte Casella amb les coordenades dins del tauler
-     */
-    private Casella getCasella(float x, float y, SurfaceView s) {
-        float coordX, coordY; //coordenades dins el Surface
-        int i,j; //nombre de casella
-
-        float midaCasellaX = s.getWidth()/10.0f;
-        float midaCasellaY = s.getHeight()/10.0f;
-
-        //càlcul de les coordenades relatives al tauler
-        coordX = x - s.getX();
-        coordY =  y - s.getY();
-
-        //per passar-ho a casella dividim la coordenada obtinguda per la mida de les caselles del tauler
-        i = (int) (coordX/midaCasellaX);
-        j = (int) (coordY/midaCasellaY);
-
-        return new Casella(i,j);
-    }
-
-    /**
-     * Mètode per anar actualitzant el Text View dels missatges de la partida. Afegirà el missatge
-     * corresponent al que ja havia posat.
-     * @param text: String a afegir
-     */
-    private void afegirMissatges(String text) {
-        // concatenam nou text a l'historial
-        tvMissatges.append(text + "\n");
-
-        // calculam scroll automàtic fins al final del tv
-        tvMissatges.post(() -> {
-            Layout layout = tvMissatges.getLayout();
-            if (layout != null) {
-                int scrollAmount = layout.getLineTop(tvMissatges.getLineCount()) - tvMissatges.getHeight();
-                if (scrollAmount > 0) {
-                    tvMissatges.scrollTo(0, scrollAmount);
-                } else {
-                    tvMissatges.scrollTo(0, 0);
-                }
-            }
-        });
     }
 }
