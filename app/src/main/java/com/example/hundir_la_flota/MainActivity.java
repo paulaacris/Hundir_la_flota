@@ -9,10 +9,12 @@ import android.text.Layout;
 import android.text.method.ScrollingMovementMethod;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -24,6 +26,14 @@ public class MainActivity extends AppCompatActivity {
     private Button btnNouJoc, btnConnectar, btnAturar, btnPista; // declarar los botones para acceder a ellos desde cualquier metodo
     private TextView tvMissatges, tvDarreraJugadaMeva;
     private SurfaceView tauler1, tauler2;
+
+    // declaraciones para la zona de pistas
+    private Button btnCierrePista;
+    private TextView tvPistaJugador, tvPistaRival, tvTitolPistaJugador, tvTitolPistaRival;
+    private ConstraintLayout zonaPista;
+
+    // Declaració del conjunt com array d'elements
+    UnsortedAarraySet<View> conjuntPista;
 
 
     @Override
@@ -47,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
         // hacer el text view de mensajes desplazable
         tvMissatges.setMovementMethod(new ScrollingMovementMethod());
 
-        // vincular los botones del xml
+        // vincular los botones principales del xml
         btnNouJoc = findViewById(R.id.botonNuevo);
         btnConnectar = findViewById(R.id.botonConnecta);
         btnAturar = findViewById(R.id.botonAtura);
@@ -57,14 +67,43 @@ public class MainActivity extends AppCompatActivity {
         tvMissatges = findViewById(R.id.missatges);
         tvDarreraJugadaMeva = findViewById(R.id.textViewDJM);
 
+        // vincular zona de pista del xml
+        tvPistaJugador = findViewById(R.id.tvPistaMio);
+        tvPistaRival =  findViewById(R.id.tvPistaRival);
+        tvTitolPistaJugador = findViewById(R.id.tvPistaEMV);
+        tvTitolPistaRival = findViewById(R.id.tvPistaESV);
+        btnCierrePista = findViewById(R.id.botonCerrarPista);
+        zonaPista = findViewById(R.id.layoutPista);
+
+        //els textview que mostrin les dades de les pistes poden ser desplaçables
+        tvPistaJugador.setMovementMethod(new ScrollingMovementMethod());
+        tvPistaRival.setMovementMethod(new ScrollingMovementMethod());
+
+        // instanciamos el conjunto de elementos para la zona de pista
+        conjuntPista = new UnsortedAarraySet<>(10); //10 max per si de cas
+
+        // afegim els views que han d'anar a la zona de pista dins el conjunt
+        conjuntPista.add(tvPistaJugador);
+        conjuntPista.add(tvPistaRival);
+        conjuntPista.add(tvTitolPistaJugador);
+        conjuntPista.add(tvTitolPistaRival);
+        conjuntPista.add(btnCierrePista);
+        conjuntPista.add(zonaPista);
+
         // establecemos que botones estan activos al empezar
-        actualizarBotones();
+        actualizarVisibilidadBotones();
+        // inicialmente las pistas estan ocultas
+        actualizarVisibilidadPistas(View.INVISIBLE);
 
         // al pulasr JOC o CONNECTAR, el estado pasa a JUGANT (con listeners)
-        btnNouJoc.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarBotones();});
-        btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarBotones();});
+        btnNouJoc.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
+        btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
         // al pulasr ATURAR, el estado pasa a ATURADA
-        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURADA; actualizarBotones();});
+        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURADA; actualizarVisibilidadBotones();});
+        // al pulsar PISTA llamamos al metodo que gestiona sus componentes con la visibilidad a true para que los muestre
+        btnPista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.VISIBLE);});
+        //al pulsar el cierre de PISTA llamamos al mismo metodo pero en false para que oculte los componentes
+        btnCierrePista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.INVISIBLE);});
 
         // vincular los tableros del xml
         tauler1 = findViewById(R.id.tauler1);
@@ -78,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Metodo para activar/desactivar botones segun el estado actual
      */
-    private void actualizarBotones() {
+    private void actualizarVisibilidadBotones() {
         if (estatActual == estatJoc.ATURADA) {
             // solo estan activos NouJoc y Connectar
             btnConnectar.setEnabled(true);
@@ -99,6 +138,22 @@ public class MainActivity extends AppCompatActivity {
             btnAturar.setAlpha(1.0f);
             btnPista.setEnabled(true);
             btnPista.setAlpha(1.0f);
+        }
+    }
+
+    /**
+     * Mètode per gestionar el comportament al pitjar el botó de Pista.
+     * // @param mostrar si és true es mostraran els components, si és fals s'amagaran.
+     */
+    private void actualizarVisibilidadPistas(int visibilitat) {
+        Iterator<View> it;
+        View v;
+
+        it = conjuntPista.iterator();
+
+        while (it.hasNext()) { // mentre quedin elements per iterar
+            v = (View) it.next();
+            v.setVisibility(visibilitat); // li assignam la visibilitat
         }
     }
 
@@ -175,7 +230,7 @@ public class MainActivity extends AppCompatActivity {
         float midaCasellaX = s.getWidth()/10.0f;
         float midaCasellaY = s.getHeight()/10.0f;
 
-        // //per passar-ho a casella dividim la coordenada obtinguda per la mida de les caselles del tauler
+        //per passar-ho a casella dividim la coordenada obtinguda per la mida de les caselles del tauler
         int i = (int) (coordX/midaCasellaX);
         int j = (int) (coordY/midaCasellaY);
 
