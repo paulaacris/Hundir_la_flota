@@ -19,6 +19,8 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import java.util.Random;
+
 public class MainActivity extends AppCompatActivity {
 
     enum estatJoc { JUGANT, ATURADA } // porque solo hay dos estados posibles
@@ -33,7 +35,11 @@ public class MainActivity extends AppCompatActivity {
     private ConstraintLayout zonaPista;
 
     // Declaració del conjunt com array d'elements
-    UnsortedAarraySet<View> conjuntPista;
+    private UnsortedAarraySet<View> conjuntPista;
+
+    // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
+    private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsVius;
+    private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
 
 
     @Override
@@ -109,6 +115,24 @@ public class MainActivity extends AppCompatActivity {
         tauler1 = findViewById(R.id.tauler1);
         tauler2 = findViewById(R.id.tauler2);
 
+        // inicializamos los mapping de jugadores (2 jugadores)
+        vaixellsVius = new UnsortedArrayMapping<>(2);
+        vaixellsEnfonsats = new UnsortedArrayMapping<>(2);
+        // inicializamos los mappings de casillas (20: total de casillas de una flota - 1x4 + 2x3 + 3x2 + 4x1)
+        UnsortedArrayMapping<Casella, Vaixell> viusJ1 = new UnsortedArrayMapping<>(20);
+        UnsortedArrayMapping<Casella, Vaixell> enfonsatsJ1 = new UnsortedArrayMapping<>(20);
+        UnsortedArrayMapping<Casella, Vaixell> viusJ2 = new UnsortedArrayMapping<>(20);
+        UnsortedArrayMapping<Casella, Vaixell> enfonsatsJ2 = new UnsortedArrayMapping<>(20);
+
+        // lo guardamos en la estructura principal (1=jugador, 2=rival)
+        vaixellsVius.put(1, viusJ1);
+        vaixellsVius.put(2, viusJ2);
+        vaixellsEnfonsats.put(1, enfonsatsJ1);
+        vaixellsEnfonsats.put(2, enfonsatsJ2);
+
+        // generamos aleatoriamente todos los barcos
+        crearVaixells();
+
         // dibujamos los tableros
         tauler1.post(() -> pintarTaulerInicial(tauler1)); // en post porque el SurfaceView puede no estar creado todavia
         tauler2.post(() -> pintarTaulerInicial(tauler2));
@@ -155,6 +179,89 @@ public class MainActivity extends AppCompatActivity {
             v = (View) it.next();
             v.setVisibility(visibilitat); // li assignam la visibilitat
         }
+    }
+
+    /**
+     * Genera aleatoriamente los barcos de cada jugador
+     */
+    private void crearVaixells() {
+        // 1 de 4, 2 de 3, 3 de 2, 4 de 1
+        int[] midesFlota = {4, 3, 3, 2, 2, 2, 1, 1, 1, 1};
+        int id = 1;
+
+        Random random = new Random();
+
+        for (int jugador = 1; jugador <= 2; jugador++) {
+            // sacamos el mapping de este jugador
+            UnsortedArrayMapping<Casella, Vaixell> viusJugador = vaixellsVius.get(jugador);
+
+            for (int mida : midesFlota) {
+                boolean colocado = false;
+
+                int colorVaixell = 0;
+                switch (mida) {
+                    case 4:
+                        colorVaixell = Color.rgb(181, 178, 214);
+                        break;
+                    case 3:
+                        colorVaixell = Color.rgb(165, 210, 230);
+                        break;
+                    case 2:
+                        colorVaixell = Color.rgb(165, 202, 206);
+                        break;
+                    case 1:
+                        colorVaixell = Color.rgb(206, 186, 189);
+                        break;
+                }
+
+                while (!colocado) {
+                    int orientacio = random.nextInt(2); // de 0 a 1
+                    int columna = random.nextInt(10); // de 0 a 9
+                    int fila = random.nextInt(10); // de 0 a 9
+
+                    // comprobamos si cambe y no toca a otros
+                    if (posicioValida(columna, fila, mida, orientacio, viusJugador)) {
+                        Vaixell nouVaixell = new Vaixell(mida, orientacio, colorVaixell, id++, jugador);
+
+                        // guardamos cada casilla que ocupa el barco en la estructura
+                        for (int i = 0; i < mida; i++) {
+                            int c = columna + (orientacio == 0 ? i : 0);
+                            int f = fila + (orientacio == 1 ? i : 0);
+                            viusJugador.put(new Casella(c, f), nouVaixell);
+                        }
+                        colocado = true;
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean posicioValida(int columna, int fila, int mida, int orientacio, UnsortedArrayMapping<Casella, Vaixell> viusJugador) {
+        // se encunetra dentro de los limites del mapa
+        // si en la columna 6 empezamos a comocar el barco de 4 ocupará las casillas 6,7,8,9, cabe bien (6+4 = 10)
+        if (orientacio == 0 && columna + mida > 10) return false;
+        if (orientacio == 1 && fila + mida > 10) return false;
+
+        // recorremos cada casilla que ocupa el barco que queremos colocar
+        for (int i = 0; i < mida; i++) {
+            // calculamos las coordenadas de esta casilla del barco
+            int c = columna + (orientacio == 0 ? i : 0);
+            int f = fila + (orientacio == 1 ? i : 0);
+
+            // comprobamos que la casilla no toca ningun otro barco (ni lados ni diagonales)
+            for (int j = c-1; j <= c+1; j++) { // columnas vecinas (izquierda, centro, derecha)
+                for (int k = f-1; k <= f+1; k++) { // filas vecinas (arriba, centro, abajo)
+                    // para evitar buscar en coordenadas que estan fuera del mapa
+                    if (j >= 0 && j < 10 && k >= 0 && k < 10) {
+                        // comprobamos si hay colision
+                        if (viusJugador.get(new Casella (j,k)) != null) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -287,10 +394,48 @@ public class MainActivity extends AppCompatActivity {
                 canvas.drawLine(0, x, alt, x, p); // lineas horizontales
             }
 
+            // Pintamos los barcos en el tablero 1
+            if (tauler == tauler1) {
+                pintarElsMeusVaixells(canvas, espacio);
+            }
+
             return canvas; // devolvermos el canvas para seguir usándolo
         }
 
         return null;
+    }
+
+    /**
+     * Función que pinta nuestros barcos en el tablero 1
+     * @param canvas
+     * @param espacio
+     */
+    private void pintarElsMeusVaixells(Canvas canvas, float espacio) {
+        // sacamos nuestros barcos (jugador 1)
+        UnsortedArrayMapping<Casella, Vaixell> viusJ1 = vaixellsVius.get(1);
+
+        if (viusJ1 == null) return;
+
+        // configurar el pincel
+        Paint p = new Paint();
+        p.setStyle(Paint.Style.FILL);
+
+        // recorremos la estructura de casillas
+        Iterator<Casella> it = viusJ1.iterator();
+
+        while (it.hasNext()) {
+            Casella c = (Casella) it.next();
+            Vaixell v = viusJ1.get(c); // obtenemos el barco que hay en esa casilla
+
+            p.setColor(v.color); // pintamos cada caislla del color de su barco
+
+            // calculamos las coordenadas en pixeles
+            float left = c.j * espacio;
+            float top = c.i * espacio;
+
+            // dibujamos el cuadrado del barco
+            canvas.drawRoundRect(left + 5, top + 5, left + espacio - 5, top + espacio - 5, 20, 20, p);
+        }
     }
 
     /**
