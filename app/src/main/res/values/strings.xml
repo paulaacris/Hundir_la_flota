@@ -9,4 +9,9 @@
     <string name="botonAtura">Boton para terminar la partida actual </string>
     <string name="botonPista">boton para obtener la posicion de todos los barcos</string>
     <string name="botonConnecta">Boton para jugar online</string>
+    <string name="tvPistaEMV">Els meus vaixells</string>
+    <string name="tvPistaESV">Els seus vaixells</string>
+    <string name="botonCerrarPista">X</string>
+    <string name="tvPistaMio">TextView</string>
+    <string name="tvPistaRival">TextView</string>
 </resources>

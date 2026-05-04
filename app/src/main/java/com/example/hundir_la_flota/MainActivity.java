@@ -36,7 +36,6 @@ public class MainActivity extends AppCompatActivity {
     UnsortedAarraySet<View> conjuntPista;
 
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -73,8 +72,12 @@ public class MainActivity extends AppCompatActivity {
         tvPistaRival =  findViewById(R.id.tvPistaRival);
         tvTitolPistaJugador = findViewById(R.id.tvPistaEMV);
         tvTitolPistaRival = findViewById(R.id.tvPistaESV);
-        btnCierrePista = findViewById(R.id.cerrarPista);
+        btnCierrePista = findViewById(R.id.botonCerrarPista);
         zonaPista = findViewById(R.id.layoutPista);
+
+        //els textview que mostrin les dades de les pistes poden ser desplaçables
+        tvPistaJugador.setMovementMethod(new ScrollingMovementMethod());
+        tvPistaRival.setMovementMethod(new ScrollingMovementMethod());
 
         // instanciamos el conjunto de elementos para la zona de pista
         conjuntPista = new UnsortedAarraySet<>(10); //10 max per si de cas
@@ -87,23 +90,20 @@ public class MainActivity extends AppCompatActivity {
         conjuntPista.add(btnCierrePista);
         conjuntPista.add(zonaPista);
 
-        //els textview que mostrin les dades de les pistes poden ser desplaçables
-        tvPistaJugador.setMovementMethod(new ScrollingMovementMethod());
-        tvPistaRival.setMovementMethod(new ScrollingMovementMethod());
-
         // establecemos que botones estan activos al empezar
-        actualizarBotones();
+        actualizarVisibilidadBotones();
+        // inicialmente las pistas estan ocultas
+        actualizarVisibilidadPistas(View.INVISIBLE);
 
         // al pulasr JOC o CONNECTAR, el estado pasa a JUGANT (con listeners)
-        btnNouJoc.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarBotones();});
-        btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarBotones();});
+        btnNouJoc.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
+        btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
         // al pulasr ATURAR, el estado pasa a ATURADA
-        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURADA; actualizarBotones();});
+        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURADA; actualizarVisibilidadBotones();});
         // al pulsar PISTA llamamos al metodo que gestiona sus componentes con la visibilidad a true para que los muestre
-        btnPista.setOnClickListener(v -> {gestioPista(true);});
+        btnPista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.VISIBLE);});
         //al pulsar el cierre de PISTA llamamos al mismo metodo pero en false para que oculte los componentes
-        btnCierrePista.setOnClickListener(v -> {gestioPista(false);});
-
+        btnCierrePista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.INVISIBLE);});
 
         // vincular los tableros del xml
         tauler1 = findViewById(R.id.tauler1);
@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Metodo para activar/desactivar botones segun el estado actual
      */
-    private void actualizarBotones() {
+    private void actualizarVisibilidadBotones() {
         if (estatActual == estatJoc.ATURADA) {
             // solo estan activos NouJoc y Connectar
             btnConnectar.setEnabled(true);
@@ -143,27 +143,17 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Mètode per gestionar el comportament al pitjar el botó de Pista.
-     * @param mostrar si és true es mostraran els components,
-     *                si és fals s'amagaran.
+     * // @param mostrar si és true es mostraran els components, si és fals s'amagaran.
      */
-    private void gestioPista(boolean mostrar) {
-        int visibilitat;
+    private void actualizarVisibilidadPistas(int visibilitat) {
         Iterator<View> it;
         View v;
 
-        //generar text de les pistes i assignar el text als views - más adelante
-
-        // si el paràmetre ens ha arribat com a true, voldrem que els views siguin visibles
-        // si ha arribat com a fals, els voldrem insvisibles
-        if (mostrar) visibilitat = View.VISIBLE;
-        else visibilitat = View.INVISIBLE;
-
-        //depenent del que s'hagi elegit farem servir l'iterador del conjunt per aplicar-ho
         it = conjuntPista.iterator();
 
-        while (it.hasNext()) { //mentre quedin elements per iterar
+        while (it.hasNext()) { // mentre quedin elements per iterar
             v = (View) it.next();
-            v.setVisibility(visibilitat); //li assignam la visibilitat
+            v.setVisibility(visibilitat); // li assignam la visibilitat
         }
     }
 
