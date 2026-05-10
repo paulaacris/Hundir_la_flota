@@ -6,6 +6,7 @@ public class Vaixell {
     int color;
     int id;
     int jugador; // 1 o 2
+    int impactes = 0;
 
     public Vaixell(int mida, int orientacio, int color, int id, int jugador) {
         this.mida = mida;

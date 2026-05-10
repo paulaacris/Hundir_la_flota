@@ -23,10 +23,11 @@ import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
 
-    enum estatJoc { JUGANT, ATURADA } // porque solo hay dos estados posibles
-    private estatJoc estatActual = estatJoc.ATURADA; // estado inicial del juego
+    enum estatJoc { JUGANT, ATURAT, EN_ESPERA, ACABAT} // porque solo hay dos estados posibles
+    private estatJoc estatActual = estatJoc.ATURAT; // estado inicial del juego
+    private int tornActual; // 1:nosotros, 2:robot
     private Button btnNouJoc, btnConnectar, btnAturar, btnPista; // declarar los botones para acceder a ellos desde cualquier metodo
-    private TextView tvMissatges, tvDarreraJugadaMeva;
+    private TextView tvMissatges, tvDarreraJugadaMeva, tvDarreraJugadaSeva, tvTeusIntents;
     private SurfaceView tauler1, tauler2;
 
     // declaraciones para la zona de pistas
@@ -34,13 +35,16 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvPistaJugador, tvPistaRival, tvTitolPistaJugador, tvTitolPistaRival;
     private ConstraintLayout zonaPista;
 
+    private LinkedListQueue<Casella> objectiusPendentsRobot = new LinkedListQueue<>();
+
     // Declaració del conjunt com array d'elements
     private UnsortedAarraySet<View> conjuntPista;
 
     // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsVius;
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
-
+    // Estructura casillas ya atacadas Mapping<Jugador , Set<Casella>>
+    private UnsortedArrayMapping<Integer, UnsortedAarraySet<Casella>> casellesAtacades;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,13 +60,6 @@ public class MainActivity extends AppCompatActivity {
         // forzar horientacion en horizontal
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
 
-        // vincular los TextView del xml
-        tvMissatges = findViewById(R.id.missatges);
-        tvDarreraJugadaMeva = findViewById(R.id.textViewDJR);
-
-        // hacer el text view de mensajes desplazable
-        tvMissatges.setMovementMethod(new ScrollingMovementMethod());
-
         // vincular los botones principales del xml
         btnNouJoc = findViewById(R.id.botonNuevo);
         btnConnectar = findViewById(R.id.botonConnecta);
@@ -72,6 +69,11 @@ public class MainActivity extends AppCompatActivity {
         // vincular TextViews del xml
         tvMissatges = findViewById(R.id.missatges);
         tvDarreraJugadaMeva = findViewById(R.id.textViewDJM);
+        tvDarreraJugadaSeva = findViewById(R.id.textViewDJR);
+        tvTeusIntents = findViewById(R.id.textViewTI);
+
+        // hacer el text view de mensajes desplazable
+        tvMissatges.setMovementMethod(new ScrollingMovementMethod());
 
         // vincular zona de pista del xml
         tvPistaJugador = findViewById(R.id.tvPistaMio);
@@ -102,10 +104,29 @@ public class MainActivity extends AppCompatActivity {
         actualizarVisibilidadPistas(View.INVISIBLE);
 
         // al pulasr JOC o CONNECTAR, el estado pasa a JUGANT (con listeners)
-        btnNouJoc.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
+        btnNouJoc.setOnClickListener(v -> {
+            // decidir el turno aleatorio
+            tornActual = new Random().nextInt(2) + 1; // para que el resultado sea 1/2 no 0/1
+            actualitzarColorsTorns();
+
+            if (tornActual == 1) {
+                estatActual = estatJoc.JUGANT;
+                actualizarVisibilidadBotones();
+                afegirMissatges("Nova partida! Comença el jugador local");
+            } else {
+                estatActual = estatJoc.EN_ESPERA;
+                actualizarVisibilidadBotones();
+                afegirMissatges("Nova partida! Comença el rival automàtic");
+                // esperamos 1 segundo
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    estatActual = estatJoc.JUGANT;
+                    jugadaRobot();
+                }, 1000);
+            }
+        });
         btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
         // al pulasr ATURAR, el estado pasa a ATURADA
-        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURADA; actualizarVisibilidadBotones();});
+        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURAT; actualizarVisibilidadBotones();});
         // al pulsar PISTA llamamos al metodo que gestiona sus componentes con la visibilidad a true para que los muestre
         btnPista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.VISIBLE);});
         //al pulsar el cierre de PISTA llamamos al mismo metodo pero en false para que oculte los componentes
@@ -118,6 +139,10 @@ public class MainActivity extends AppCompatActivity {
         // inicializamos los mapping de jugadores (2 jugadores)
         vaixellsVius = new UnsortedArrayMapping<>(2);
         vaixellsEnfonsats = new UnsortedArrayMapping<>(2);
+
+        // inicializamos el registro de ataques de los jugadores
+        casellesAtacades = new UnsortedArrayMapping<>(2);
+
         // inicializamos los mappings de casillas (20: total de casillas de una flota - 1x4 + 2x3 + 3x2 + 4x1)
         UnsortedArrayMapping<Casella, Vaixell> viusJ1 = new UnsortedArrayMapping<>(20);
         UnsortedArrayMapping<Casella, Vaixell> enfonsatsJ1 = new UnsortedArrayMapping<>(20);
@@ -129,6 +154,10 @@ public class MainActivity extends AppCompatActivity {
         vaixellsVius.put(2, viusJ2);
         vaixellsEnfonsats.put(1, enfonsatsJ1);
         vaixellsEnfonsats.put(2, enfonsatsJ2);
+
+        // guardamos el registro de ataques de los jugadores (10 filas x 10 columnas = 100 casillas totales)
+        casellesAtacades.put(1, new UnsortedAarraySet<>(100));
+        casellesAtacades.put(2, new UnsortedAarraySet<>(100));
 
         // generamos aleatoriamente todos los barcos
         crearVaixells();
@@ -142,7 +171,7 @@ public class MainActivity extends AppCompatActivity {
      * Metodo para activar/desactivar botones segun el estado actual
      */
     private void actualizarVisibilidadBotones() {
-        if (estatActual == estatJoc.ATURADA) {
+        if (estatActual == estatJoc.ATURAT) {
             // solo estan activos NouJoc y Connectar
             btnConnectar.setEnabled(true);
             btnConnectar.setAlpha(1.0f); // opacidad del boton
@@ -167,7 +196,7 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Mètode per gestionar el comportament al pitjar el botó de Pista.
-     * // @param mostrar si és true es mostraran els components, si és fals s'amagaran.
+     * @param visibilitat
      */
     private void actualizarVisibilidadPistas(int visibilitat) {
         Iterator<View> it;
@@ -279,29 +308,166 @@ public class MainActivity extends AppCompatActivity {
                 break;
             // quan s'aixeca el dit
             case MotionEvent.ACTION_UP:
-                // solo gestionamos el click si esta dentro del tablero rival
-                if (detroTablero(cursorX, cursorY, tauler2)) {
-                    // a partir de las coordenadas seleccionadas obtenemos la casilla (i,j)
-                    Casella casillaSeleccionada = getCasella(cursorX, cursorY, tauler2);
+                // solo permitimos el clik si estamos JUGANT y es nuestro turno (1)
+                if (estatActual == estatJoc.JUGANT && tornActual == 1) {
+                    // solo gestionamos el click si esta dentro del tablero rival
+                    if (detroTablero(cursorX, cursorY, tauler2)) {
+                        // a partir de las coordenadas seleccionadas obtenemos la casilla (i,j)
+                        Casella casillaSeleccionada = getCasella(cursorX, cursorY, tauler2);
 
-                    // canviam el texte de la darrera jugada pròpia (DJM)
-                    tvDarreraJugadaMeva.setText("Darrera jugada teva: Casella " + casillaSeleccionada.toString());
-                    // actualizamos la info de la zona de mensajes
-                    affegirMissatges("Has seleccionado la Casilla" + casillaSeleccionada.toString());
-
-                    // pintar
-                    pintarGraelles(casillaSeleccionada);
+                        atacar(casillaSeleccionada, 1, 2);
+                    }
                 }
         }
-
         return true;
+    }
+
+    /**
+     *
+     * @param casilla casilla atacada
+     * @param atacante quien ataca
+     * @param atacado a quien
+     */
+    private void atacar(Casella casilla, int atacante, int atacado) {
+        // comprobar si la casilla ya habia sido atacada antes
+        UnsortedAarraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
+        if (historialAtacante.contains(casilla)) {
+            return; // si ya se habia atacado la ignoramos
+        }
+
+        // registrar la casilla en el historial
+        historialAtacante.add(casilla);
+
+        // obtenemos los barcos del atacado
+        UnsortedArrayMapping<Casella, Vaixell> viusAtacat = vaixellsVius.get(atacado);
+        UnsortedArrayMapping<Casella, Vaixell> enfonsatsAtacat = vaixellsEnfonsats.get(atacado);
+
+        // comprobamos que hay en la casilla a la que queremos atacar
+        Vaixell vaixellAtacat = viusAtacat.get(casilla);
+
+        if (vaixellAtacat == null) {
+            afegirMissatges(atacante == 1 ? "Has tocat aigua!" : "El robot ha tocat aigua!");
+
+            // cambiamos de turno
+            tornActual = atacante == 1 ? 2 : 1;
+            actualitzarColorsTorns();
+        } else { // la casilla donde hemos tocado habia un barco
+            vaixellAtacat.impactes ++;
+
+            // movemos la casilla de vivos a hundidos
+            viusAtacat.remove(casilla);
+            enfonsatsAtacat.put(casilla, vaixellAtacat);
+
+            if (vaixellAtacat.impactes == vaixellAtacat.mida) {
+                afegirMissatges(atacante == 1 ? "Has enfonsat un vaixell!" : "El robot ha enfonsat un vaixell!");
+
+                // si es el robot el que ha hundido el barco vaciamos afegirVeinsPendents para que no siga probando posiciones que no van a ser
+                if (atacante == 2) {
+                    objectiusPendentsRobot.empty();
+                }
+            } else {
+                afegirMissatges(atacante == 1 ? "Has tocat un vaixell!" : "El robot ha tocat un vaixell!");
+
+                // si es el robot el que ha tocado calculamos sus vecinos
+                if (atacante == 2) {
+                    afegirVeinsPendents(casilla);
+                }
+            }
+            // al acertar se repite turno
+        }
+
+        // actualizmaos mensajes
+        if (atacante == 1) {
+            // canviam el texte de la darrera jugada pròpia (DJM)
+            tvDarreraJugadaMeva.setText("Darrera jugada teva: Casella " + casilla.toString());
+            // actualizamos la info de la zona de mensajes
+            afegirMissatges("Has seleccionado la Casilla" + casilla.toString());
+        } else {
+            tvDarreraJugadaSeva.setText("Darrera jugada seva: Casella " + casilla.toString());
+            afegirMissatges("El robot ha seleccionado la Casilla" + casilla.toString());
+        }
+
+        repintarTaulers();
+
+        // comprobamos si la partida ha terminado
+        if (viusAtacat.isEmpty()) {
+            estatActual = estatJoc.ACABAT;
+            afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "El robot ha enfonsat un vaixell!");
+            actualizarVisibilidadBotones();
+            return;
+        }
+
+        // si el turno es del robot llamamos a su función
+        if (tornActual == 2 && estatActual == estatJoc.JUGANT) {
+            estatActual = estatJoc.EN_ESPERA;
+            // esperamos 1 segundo
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                // Comprobamos que el usuario no haya pulsado "Aturar" mientras esperaba
+                if (estatActual != estatJoc.ACABAT && estatActual != estatJoc.ATURAT) {
+                    estatActual = estatJoc.JUGANT;
+                    jugadaRobot();
+                }
+            }, 1000);
+        }
+    }
+
+    /**
+     * Metodo que decide lo que hará el robot
+     */
+    private void jugadaRobot() {
+        Random random = new Random();
+        Casella casillaElegida;
+        UnsortedAarraySet<Casella> historialRobot = casellesAtacades.get(2);
+
+        // mode remat
+        if (!objectiusPendentsRobot.isEmpty()) {
+            // sacamos el primer objetivo
+            casillaElegida = objectiusPendentsRobot.getFirst();
+            objectiusPendentsRobot.removeFirst();
+        } else {
+            // mode cerca
+            // genera coordenadas aleatorias hasta que encuentre una que no habia atacado antes ya
+            do {
+                int columna = random.nextInt(10);
+                int fila = random.nextInt(10);
+                casillaElegida = new Casella(columna, fila);
+            } while (historialRobot.contains(casillaElegida)); // si la contiene repite
+        }
+
+        // si no la tiene hace el ataque
+        atacar(casillaElegida, 2, 1);
+    }
+
+    /**
+     * Calcula los 4 vecinos de un impacto y los añade a la cola de objetivos del robot
+     */
+    private void afegirVeinsPendents(Casella c) {
+        UnsortedAarraySet<Casella> historialRobot = casellesAtacades.get(2);
+
+        // arriba, abajo, izquierda, derrecha
+        int[][] desplacaments = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+        for (int[] desp : desplacaments) {
+            int novaFila = c.i + desp[0];
+            int novaColumna = c.j + desp[1];
+
+            // Comprobar que no se sale del tablero
+            if (novaFila >= 0 && novaFila < 10 && novaColumna >= 0 && novaColumna < 10) {
+                Casella veina = new Casella(novaColumna, novaFila);
+
+                // comprobar que no se haya atacado ya y que no este en la cola
+                if (!historialRobot.contains(veina) && !objectiusPendentsRobot.contains(veina)) {
+                    objectiusPendentsRobot.put(veina);
+                }
+            }
+        }
     }
 
     /**
      * Mètode que actualitza el Text View dels missatges de la partida. Afegirà el missatge corresponent al que ja havia posat.
      * @param text String a afegir
      */
-    private void affegirMissatges(String text) {
+    private void afegirMissatges(String text) {
         // concatenam nou text a l'historial
         tvMissatges.append("\n" + text);
 
@@ -317,6 +483,16 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private void actualitzarColorsTorns() {
+        if (tornActual == 1) {
+            tvTeusIntents.setText("Ataca al teu oponent!");
+            tvTeusIntents. setBackgroundColor(Color.rgb(239, 46, 163));
+        } else {
+            tvTeusIntents.setText("Els teus intents");
+            tvTeusIntents. setBackgroundColor(Color.rgb(221, 225, 229));
+        }
     }
 
     /////////////////// MÉTODOS AUXILIARES PARA CALCULAR ///////////////////
@@ -450,38 +626,71 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Repinta completamente las rejillas. Si recibe una Casella, dibuja el cuadrado rojo en esa casilla del tablero rival.
+     * Repinta los dos tableros con la informacion actual
      */
-    private void pintarGraelles(Casella casella) {
+    private void repintarTaulers() {
+        // TABLERO 1
+        Canvas canvas1 = dibuixaTaulerBuit(tauler1);
+
+        if (canvas1 != null) {
+            float espacio = tauler1.getHeight() / 10f;
+            pintarTirs(canvas1, 2, 1, espacio);
+            tauler1.getHolder().unlockCanvasAndPost(canvas1); // cerramos y pintamos
+        }
+
         // TABLERO 2
-        // pintamos el fondo
         Canvas canvas2 = dibuixaTaulerBuit(tauler2);
 
-        // pintamos el cuadrado rojo
         if (canvas2 != null) {
-            if (casella != null){
-
-                // configurar el pincel
-                Paint p = new Paint();
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(10);
-                p.setColor(Color.RED);
-
-                float espacio = tauler2.getHeight() / 10f; // tamaño de cada casilla
-
-                // Calculamos la posición de la casilla (i,j) en píxeles
-                // i = fila (Y), j = columna (X)
-                float left = casella.j * espacio; // donde empezar a dibujar el cuadrado desde la izquierda
-                float top = casella.i * espacio; // donde empezar a dibujar el cuadrado desde arriba
-
-                // Dibujamos el rectángulo rojo con un pequeño margen interno
-                // (donde empieza el cuadrado + margen (para que no toque las lineas), donde acaba
-                // donde acaba, donde acaba,
-                // radio de las esquinas, pincel)
-                canvas2.drawRoundRect(left + 5, top + 5, left + espacio - 5, top + espacio - 5, 20, 20, p);
-            }
-
+            float espacio = tauler2.getHeight() / 10f;
+            pintarTirs(canvas2, 1, 2, espacio);
             tauler2.getHolder().unlockCanvasAndPost(canvas2); // cerramos y pintamos
+        }
+    }
+
+    /**
+     * Recorre el historial de ataque y pinta el resultado en cada casilla
+     */
+    private void pintarTirs(Canvas canvas, int atacante, int atacado, float espacio) {
+        UnsortedAarraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
+        UnsortedArrayMapping<Casella, Vaixell> hundidosAtacado = vaixellsEnfonsats.get(atacado);
+
+        if (historialAtacante == null) return; // si todavai no ha hecho ataques no pintamos nada
+
+        Paint p = new Paint();
+        p.setStyle(Paint.Style.FILL);
+
+        // recorremos la estructura
+        Iterator<Casella> it = historialAtacante.iterator();
+
+        while (it.hasNext()) {
+            Casella c = (Casella) it.next();
+            Vaixell v = hundidosAtacado.get(c);
+
+            float left = c.j * espacio;
+            float top = c.i * espacio;
+
+            // si no hay barco en esta casilla AGUA
+            if (v == null) {
+                p.setColor(Color.rgb(172, 217, 218));
+
+                float centroX = left + (espacio/2);
+                float centroY = top + (espacio/2);
+                float radio = espacio/5;
+
+                canvas.drawCircle(centroX, centroY, radio, p);
+
+            } else { // si hay barco
+                // hundido
+                if (v.impactes == v.mida) {
+                    p.setColor(Color.RED);
+                } else {
+                    // tocado
+                    p.setColor(Color.rgb(255, 165, 0));
+                }
+
+                canvas.drawRoundRect(left + 5, top + 5, left + espacio - 5, top + espacio - 5, 20, 20, p);
+            }
         }
     }
 }
