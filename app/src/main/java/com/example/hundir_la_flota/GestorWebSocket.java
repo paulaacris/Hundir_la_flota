@@ -11,6 +11,11 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
+/**
+ * Classe auxiliar per gestionar el WebSocket.
+ * Aquesta classe encapsula la connexió, l’enviament de missatges i la recepció de respostes
+ * del servidor.
+ */
 public class GestorWebSocket {
 
     public interface EscoltadorWebSocket {

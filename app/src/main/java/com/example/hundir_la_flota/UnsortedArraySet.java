@@ -3,7 +3,7 @@ package com.example.hundir_la_flota;
 /**
  * Implementació d'un conjunt com un array d’elements no ordenats
  */
-public class UnsortedAarraySet <E> {
+public class UnsortedArraySet<E> {
     private E[] array;
     private int n;
 
@@ -12,7 +12,7 @@ public class UnsortedAarraySet <E> {
      * Reserva memòria per un array de longitud max i inicialitza n a 0.
      * @param max
      */
-    public UnsortedAarraySet(int max){
+    public UnsortedArraySet(int max){
         array = (E[]) new Object[max];
         n = 0;
     }
