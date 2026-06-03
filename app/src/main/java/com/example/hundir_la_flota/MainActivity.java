@@ -392,7 +392,7 @@ public class MainActivity extends AppCompatActivity {
             enfonsatsAtacat.put(casilla, vaixellAtacat);
 
             if (vaixellAtacat.impactes == vaixellAtacat.mida) {
-                afegirMissatges(atacante == 1 ? "Has enfonsat un vaixell!" : "El robot ha enfonsat un vaixell!");
+                afegirMissatges(atacante == 1 ? "Has enfonsat un vaixell!" : "Te han hundido un barco!");
 
                 // si es el robot el que ha hundido el barco vaciamos afegirVeinsPendents para que no siga probando posiciones que no van a ser
                 if (atacante == 2) {
@@ -425,7 +425,7 @@ public class MainActivity extends AppCompatActivity {
         // comprobamos si la partida ha terminado
         if (viusAtacat.isEmpty()) {
             estatActual = estatJoc.ACABAT;
-            afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "El robot ha enfonsat un vaixell!");
+            afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "Has perdido la partida!");
             actualizarVisibilidadBotones();
             return;
         }
@@ -868,6 +868,7 @@ public class MainActivity extends AppCompatActivity {
         String resultat;
         if (v == null) {
             resultat = "aigua"; // aigua
+            estatActual = estatJoc.JUGANT; // cambiamos el estado para que podamos seguir jugando
         } else if (v.impactes == v.mida) {
             resultat = "enfonsat"; // tots els impactes completats
         } else {
@@ -927,33 +928,51 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void carregarVaixellsRival(JSONObject jsonVaixells) {
-        // carregam el mapping de vaixells del rival
-        UnsortedArrayMapping<Casella, Vaixell> viusR = vaixellsVius.get(2);
+        // Limpiamos la memoria de la partida contra el robot para hacer hueco al rival real
+        vaixellsVius.put(2, new UnsortedArrayMapping<>(20));
+        vaixellsEnfonsats.put(2, new UnsortedArrayMapping<>(20));
 
-        //llegim array de parella {casella, vaixell} que arriba del servidor
-        JSONArray arr;
-        arr = jsonVaixells.optJSONArray("casellesVaixellsVius");
+        UnsortedArrayMapping<Casella, Vaixell> viusR = vaixellsVius.get(2);
+        JSONArray arr = jsonVaixells.optJSONArray("casellesVaixellsVius");
         if (arr == null) return;
 
         for (int i = 0; i < arr.length(); i++) {
             try {
-                JSONObject element = arr.getJSONObject(i); // element i del JSONArray
+                JSONObject element = arr.getJSONObject(i);
 
-                //obtenim la casella
+                // Obtenemos Casilla
                 JSONObject jsonCasella = element.getJSONObject("casella");
-                int ci = jsonCasella.getInt("i"); //fila
-                int cj = jsonCasella.getInt("j"); //columna
+                int ci = jsonCasella.getInt("i"); // fila en el servidor
+                int cj = jsonCasella.getInt("j"); // columna en el servidor
+                Casella c = new Casella(cj, ci);  // Tu clase Casella es (columna, fila)
 
-                //obtenim dades del vaixell
+                // Obtenemos Barco
                 JSONObject jsonVaixell = element.getJSONObject("vaixell");
-                int mida = jsonVaixell.getInt("mida"); //mida
-                int orientacio = jsonVaixell.getInt("orientacio"); //orientació
-                int color = jsonVaixell.getInt("color"); //color
+                int mida = jsonVaixell.getInt("mida");
+                int orientacio = jsonVaixell.getInt("orientacio");
+                int color = jsonVaixell.getInt("color");
 
-                //cream els objectes amb les dades rebudes per ficar-los dins lestructura del rival
-                Casella c = new Casella(cj, ci);
-                Vaixell v = new Vaixell(mida, orientacio, color, i, 2);
+                // Sacamos el ID que manda el servidor
+                int idVaixell = jsonVaixell.getInt("id");
 
+                // Comprobamos si ya habíamos creado el objeto para este barco
+                Vaixell v = null;
+                Iterator<Casella> iterador = viusR.iterator();
+                while (iterador.hasNext()) {
+                    Vaixell vaixellExistent = viusR.get((Casella) iterador.next());
+                    // Si el ID ya existe, reutilizamos el mismo barco en memoria
+                    if (vaixellExistent.id == idVaixell) {
+                        v = vaixellExistent;
+                        break;
+                    }
+                }
+
+                // Si no existía, lo creamos nuevo
+                if (v == null) {
+                    v = new Vaixell(mida, orientacio, color, idVaixell, 2);
+                }
+
+                // Guardamos
                 viusR.put(c, v);
 
             } catch (JSONException e) {
