@@ -14,4 +14,6 @@
     <string name="botonCerrarPista">X</string>
     <string name="tvPistaMio">TextView</string>
     <string name="tvPistaRival">TextView</string>
+    <string name="textFinal">Final del joc!</string>
+    <string name="botonVerResumen">Veure resum</string>
 </resources>

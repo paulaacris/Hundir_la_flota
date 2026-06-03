@@ -1,12 +1,16 @@
 package com.example.hundir_la_flota;
 
+import android.app.Dialog;
 import android.content.pm.ActivityInfo;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Layout;
 import android.text.method.ScrollingMovementMethod;
+import android.text.Html;
 import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
@@ -35,9 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private SurfaceView tauler1, tauler2;
 
     // declaraciones para la zona de pistas
-    private Button btnCierrePista;
-    private TextView tvPistaJugador, tvPistaRival, tvTitolPistaJugador, tvTitolPistaRival;
-    private ConstraintLayout zonaPista;
+    private TextView tvPistaJugador, tvPistaRival;
 
     private LinkedListQueue<Casella> objectiusPendentsRobot = new LinkedListQueue<>();
 
@@ -49,6 +51,9 @@ public class MainActivity extends AppCompatActivity {
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
     // Estructura casillas ya atacadas Mapping<Jugador , Set<Casella>>
     private UnsortedArrayMapping<Integer, UnsortedArraySet<Casella>> casellesAtacades;
+    // Colas para la repetición paso a paso
+    private LinkedListQueue<Casella> ordreTirsJ1 = new LinkedListQueue<>();
+    private LinkedListQueue<Casella> ordreTirsJ2 = new LinkedListQueue<>();
 
     // Objecte tipus GestorWebSocket per inicialitzar comunicació de missatges amb servidor
     private GestorWebSocket gestorWebSocket;
@@ -86,10 +91,10 @@ public class MainActivity extends AppCompatActivity {
         // vincular zona de pista del xml
         tvPistaJugador = findViewById(R.id.tvPistaMio);
         tvPistaRival =  findViewById(R.id.tvPistaRival);
-        tvTitolPistaJugador = findViewById(R.id.tvPistaEMV);
-        tvTitolPistaRival = findViewById(R.id.tvPistaESV);
-        btnCierrePista = findViewById(R.id.botonCerrarPista);
-        zonaPista = findViewById(R.id.layoutPista);
+        TextView tvTitolPistaJugador = findViewById(R.id.tvPistaEMV);
+        TextView tvTitolPistaRival = findViewById(R.id.tvPistaESV);
+        Button btnCierrePista = findViewById(R.id.botonCerrarPista);
+        ConstraintLayout zonaPista = findViewById(R.id.layoutPista);
 
         //els textview que mostrin les dades de les pistes poden ser desplaçables
         tvPistaJugador.setMovementMethod(new ScrollingMovementMethod());
@@ -141,15 +146,18 @@ public class MainActivity extends AppCompatActivity {
         actualizarVisibilidadPistas(View.INVISIBLE);
 
         // al pulasr JOC o CONNECTAR, el estado pasa a JUGANT (con listeners)
-        btnNouJoc.setOnClickListener(v -> {gestioNouJoc();});
+        btnNouJoc.setOnClickListener(v -> gestioNouJoc());
         btnConnectar.setOnClickListener(v -> {
             gestioConnecta(v); actualizarVisibilidadBotones();});
         // al pulasr ATURAR, el estado pasa a ATURADA
-        btnAturar.setOnClickListener(v -> {gestioAturaPartida();});
+        btnAturar.setOnClickListener(v -> gestioAturaPartida());
         // al pulsar PISTA llamamos al metodo que gestiona sus componentes con la visibilidad a true para que los muestre
-        btnPista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.VISIBLE);});
+        btnPista.setOnClickListener(v -> {
+            generarTextPistes();
+            actualizarVisibilidadPistas(View.VISIBLE);
+        });
         //al pulsar el cierre de PISTA llamamos al mismo metodo pero en false para que oculte los componentes
-        btnCierrePista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.INVISIBLE);});
+        btnCierrePista.setOnClickListener(v -> actualizarVisibilidadPistas(View.INVISIBLE));
 
         // vincular los tableros del xml
         tauler1 = findViewById(R.id.tauler1);
@@ -189,13 +197,10 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Gestiona quan es premi el botó PISTA.
      * Actualitza la visibilitat del conjunt de Views.
-     * @param visibilitat
      */
     private void actualizarVisibilidadPistas(int visibilitat) {
-        Iterator<View> it;
+        Iterator<View> it = conjuntPista.iterator();
         View v;
-
-        it = conjuntPista.iterator();
 
         while (it.hasNext()) { // mentre quedin elements per iterar
             v = (View) it.next();
@@ -205,7 +210,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Gestiona quan es premi el botó CONNECTAR.
-     * @param v
      */
     public void gestioConnecta(View v) {
         //por ahora solo esto para comprobar que la conexión nos envía bien los mensajes
@@ -214,11 +218,13 @@ public class MainActivity extends AppCompatActivity {
         estatActual = estatJoc.EN_ESPERA;
     }
 
-
     /**
      * Gestiona quan es premi el botó de NOU JOC.
      */
     private void gestioNouJoc() {
+        // limpiamos por si venimos de otra partida
+        reiniciarJoc();
+
         // decidir el turno aleatorio
         tornActual = new Random().nextInt(2) + 1; // para que el resultado sea 1/2 no 0/1
         actualitzarColorsTorns();
@@ -323,8 +329,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Metodo para detectar y gestionar cuando el usuario toca la pantalla.
-     * @param event evento que llega cuando se llama al metodo
-     * @return true si ha ido bien, false en caso contrario
      */
     public boolean onTouchEvent (MotionEvent event){
         float cursorX = event.getX();
@@ -356,10 +360,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     *
-     * @param casilla casilla atacada
-     * @param atacante quien ataca
-     * @param atacado a quien
+     * Executa la lògica d'un atac sobre una casella, gestionant els impactes, el canvi de torn i el final de la partida.
      */
     private void atacar(Casella casilla, int atacante, int atacado) {
         // comprobar si la casilla ya habia sido atacada antes
@@ -370,6 +371,12 @@ public class MainActivity extends AppCompatActivity {
 
         // registrar la casilla en el historial
         historialAtacante.add(casilla);
+
+        if (atacante == 1) {
+            ordreTirsJ1.put(casilla);
+        } else {
+            ordreTirsJ2.put(casilla);
+        }
 
         // obtenemos los barcos del atacado
         UnsortedArrayMapping<Casella, Vaixell> viusAtacat = vaixellsVius.get(atacado);
@@ -427,6 +434,7 @@ public class MainActivity extends AppCompatActivity {
             estatActual = estatJoc.ACABAT;
             afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "Has perdido la partida!");
             actualizarVisibilidadBotones();
+            mostrarResum(atacante);
             return;
         }
 
@@ -500,7 +508,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Mètode que actualitza el Text View dels missatges de la partida. Afegirà el missatge corresponent al que ja havia posat.
-     * @param text String a afegir
      */
     private void afegirMissatges(String text) {
         // concatenam nou text a l'historial
@@ -521,7 +528,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     *
+     * Modifica el text i el color de fons de la capçalera segons el jugador que té el torn.
      */
     private void actualitzarColorsTorns() {
         if (tornActual == 1) {
@@ -533,15 +540,102 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void generarTextPistes() {
+        // Generar texto para jugador 1
+        String htmlJugador1 = construirResumFlota(1);
+        tvPistaJugador.setText(Html.fromHtml(htmlJugador1, Html.FROM_HTML_MODE_LEGACY));
+
+        // Generar texto para jugador 2
+        String htmlJugador2 = construirResumFlota(2);
+        tvPistaRival.setText(Html.fromHtml(htmlJugador2, Html.FROM_HTML_MODE_LEGACY));
+    }
+
+    private String construirResumFlota(int jugador) {
+        StringBuilder sb = new StringBuilder();
+        UnsortedArrayMapping<Casella, Vaixell> vius = vaixellsVius.get(jugador);
+        UnsortedArrayMapping<Casella, Vaixell> enfonsats = vaixellsEnfonsats.get(jugador);
+
+        java.util.Map<Integer, Vaixell> vaixellsUnics = new java.util.HashMap<>();
+        java.util.Map<Integer, java.util.List<Casella>> casellesPerVaixell = new java.util.HashMap<>();
+
+        // Recorremos los barcos vivos
+        Iterator<Casella> itVius = vius.iterator();
+        while (itVius.hasNext()) {
+            Casella c = (Casella) itVius.next();
+            Vaixell v = vius.get(c);
+            if (!vaixellsUnics.containsKey(v.id)) {
+                vaixellsUnics.put(v.id, v);
+                casellesPerVaixell.put(v.id, new java.util.ArrayList<>());
+            }
+            casellesPerVaixell.get(v.id).add(c);
+        }
+
+        // Recorremos los barcos tocados/hundidos
+        Iterator<Casella> itEnfonsats = enfonsats.iterator();
+        int casellesTocades = 0;
+        while (itEnfonsats.hasNext()) {
+            Casella c = (Casella) itEnfonsats.next();
+            Vaixell v = enfonsats.get(c);
+            if (!vaixellsUnics.containsKey(v.id)) {
+                vaixellsUnics.put(v.id, v);
+                casellesPerVaixell.put(v.id, new java.util.ArrayList<>());
+            }
+            casellesPerVaixell.get(v.id).add(c);
+            casellesTocades++; // para el porcentaje
+        }
+
+        // Ordenamos los barcos de mayor a menor
+        java.util.List<Vaixell> llistaVaixells = new java.util.ArrayList<>(vaixellsUnics.values());
+        llistaVaixells.sort((v1, v2) -> Integer.compare(v2.mida, v1.mida));
+
+        // Construimos el texto HTML
+        for (Vaixell v : llistaVaixells) {
+            java.util.List<Casella> caselles = casellesPerVaixell.get(v.id);
+
+            // Verificamos cuántas casillas de este barco se van a mostrar realmente
+            boolean imprimirLinea = false;
+            StringBuilder lineaBarco = new StringBuilder();
+            lineaBarco.append("Vaixell de ").append(v.mida).append(" (").append(v.id).append("): ");
+
+            for (Casella c : caselles) {
+                boolean estaEnfonsada = (enfonsats.get(c) != null);
+
+                // Control Anti-Trampas: Si estamos conectados online y miramos al rival,
+                // solo podemos ver las casillas hundidas, ignoramos las vivas
+                if (connectat && jugador == 2 && !estaEnfonsada) {
+                    continue;
+                }
+
+                imprimirLinea = true;
+
+                if (estaEnfonsada) {
+                    // Texto en rojo y negrita si la casilla ha recibido impacto
+                    lineaBarco.append("<strong><font color='red'>(").append(c.i).append(",").append(c.j).append(")</font></strong> ");
+                } else {
+                    // Texto normal si está viva
+                    lineaBarco.append("(").append(c.i).append(",").append(c.j).append(") ");
+                }
+            }
+
+            // Si hay algo que mostrar (por si el anti-trampas dejó la línea vacía), lo añadimos
+            if (imprimirLinea) {
+                sb.append(lineaBarco.toString()).append("<br>");
+            }
+        }
+
+        // 5. Cálculo del Porcentaje Final
+        double percentatge = (casellesTocades / 20.0) * 100.0;
+        sb.append("<br><strong>Enfonsats = ").append(String.format(java.util.Locale.US, "%.2f", percentatge)).append("%</strong>");
+
+        return sb.toString();
+    }
+
     /***********************************************************************************************
      *                           MÉTODOS AUXILIARES PARA CALCULAR                                  *
      ***********************************************************************************************/
+
     /**
      * Calcula les coordenades (i,j) de la casella de la graella corresponent a les coordenades de la pantalla.
-     * @param x coordenada x del punt tocat
-     * @param y coordenada y del punt tocat
-     * @param s SurfaceView del tauler
-     * @return objecte Casella amb les coordenades dins del tauler
      */
     private Casella getCasella(float x, float y, SurfaceView s) {
         // càlcul de les coordenades relatives al tauler
@@ -561,10 +655,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Metodo booleano que comprueba si unas coordenadas están dentro de un SurfaceView
-     * @param x coordenada x del punt tocat
-     * @param y coordenada y del punt tocat
-     * @param s SurfaceView del tauler
-     * @return true si el punt tocat és dins del tauler
      */
     private boolean detroTablero(float x, float y, SurfaceView s) {
         // posición del SurfaceView en la pantalla
@@ -580,13 +670,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Comprueba
-     * @param columna
-     * @param fila
-     * @param mida
-     * @param orientacio
-     * @param viusJugador
-     * @return
+     * Comprova si un vaixell es pot col·locar en una posició sense sortir del tauler ni tocar-ne cap altre.
      */
     private boolean posicioValida(int columna, int fila, int mida, int orientacio, UnsortedArrayMapping<Casella, Vaixell> viusJugador) {
         // se encunetra dentro de los limites del mapa
@@ -621,9 +705,9 @@ public class MainActivity extends AppCompatActivity {
     ***********************************************************************************************/
 
     ///////// Gestió d'enviament de missatges /////////
+
     /**
      * Crea i envia un objecte JSON de tipus registrar un jugador.
-     * @param nomUsuari
      */
     private void enviarRegistrar(String nomUsuari) {
         try {
@@ -674,10 +758,6 @@ public class MainActivity extends AppCompatActivity {
      * contra el nostre tauler, l’aplicació calcula si ha estat aigua, tocat o enfonsat i l'envia.
      * i aquest toqui una casella del tauler rival.
      * Les dades arriben del mètode que gestiona rebre un missatge amb un tir rebut. Aquest envia el resultat.
-     * @param i fila del tir
-     * @param j columna del tir
-     * @param resultat tipus de casella
-     * @param acabat partida acabada o no
      */
     private void enviarResultatTirRebut(int i, int j, String resultat, boolean acabat) {
         try {
@@ -711,9 +791,6 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Creació de l'estructura que associa les caselles ocupades amb els vaixells que hi ha per
      * enviar al JSON els vaixells de l'usuari.
-     * @param jugador
-     * @return objecte JSON amb els vaixells
-     * @throws JSONException
      */
     private JSONObject construirJsonVaixells(int jugador) throws JSONException {
         //JSON arrel que contindrà la flota
@@ -760,9 +837,9 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /////////// Gestió de rebut de missatges ///////////
+
     /**
      * Rep el missatge del servidor amb classe GestorWebSocket com a JSONi el gestiona depenent del tipus.
-     * @param json missatge rebut
      */
     private void gestionarMissatge(JSONObject json) {
         try {
@@ -807,7 +884,6 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Gestiona quan rebem un missatge del servidor que indica que s'ha trobat un rival per tant es
      * respondrà amb el missatge partida trobada.
-     * @param json
      */
     private void gestionarPartidaTrobada(JSONObject json) {
         //llegim si toca a jugador local o hem d'esperar la jugada del rival
@@ -848,7 +924,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Gestiona quan rebem un missatge del servidor que indica que el rival ha atacat la casella indicada.
-     * @param json
      */
     private void gestionarTirRebut(JSONObject json) {
         //llegim coordenades de la casilla atacada pel rival
@@ -885,7 +960,6 @@ public class MainActivity extends AppCompatActivity {
     /**
      * Gestiona quan rebem un missatge del servidor que indica el resultat d’una tirada feta pel
      * jugador local. El missatge arriba després d'haver atacat al rival.
-     * @param json
      */
     private void gestionarResultatTir(JSONObject json) {
         //llegim dades obtingudes del tir
@@ -920,6 +994,7 @@ public class MainActivity extends AppCompatActivity {
         if (connectat) { //si esteim connectats
             enviarSortirPartida(); //avisam al servidor de la sortida
             gestorWebSocket.tancar(); //tancam connexió amb WebSocket
+            connectat = false;
         }
         //tornam a l'estat incial del joc
         estatActual = estatJoc.ATURAT;
@@ -927,6 +1002,37 @@ public class MainActivity extends AppCompatActivity {
         afegirMissatges("Partida aturada.");
     }
 
+    /**
+     * Reinicia totes les estructures de dades, missatges i taulers per començar una nova partida.
+     */
+    private void reiniciarJoc() {
+        // Limpiar estructuras de juego
+        vaixellsVius.put(1, new UnsortedArrayMapping<>(20));
+        vaixellsVius.put(2, new UnsortedArrayMapping<>(20));
+        vaixellsEnfonsats.put(1, new UnsortedArrayMapping<>(20));
+        vaixellsEnfonsats.put(2, new UnsortedArrayMapping<>(20));
+        casellesAtacades.put(1, new UnsortedArraySet<>(100));
+        casellesAtacades.put(2, new UnsortedArraySet<>(100));
+        ordreTirsJ1 = new LinkedListQueue<>();
+        ordreTirsJ2 = new LinkedListQueue<>();
+        objectiusPendentsRobot = new LinkedListQueue<>();
+
+        // Limpiar TextViews
+        tvMissatges.setText("Missatges:");
+        tvDarreraJugadaMeva.setText("Darrera jugada teva:");
+        tvDarreraJugadaSeva.setText("Darrera jugada seva:");
+        tvTeusIntents.setText("Els teus intents");
+        tvTeusIntents.setBackgroundColor(Color.rgb(221, 225, 229));
+
+        // Nueva flota y repintar
+        crearVaixells();
+        tauler1.post(() -> pintarTaulerInicial(tauler1));
+        tauler2.post(() -> pintarTaulerInicial(tauler2));
+    }
+
+    /**
+     * Descodifica el JSON rebut del servidor per carregar la distribució dels vaixells del rival remot.
+     */
     private void carregarVaixellsRival(JSONObject jsonVaixells) {
         // Limpiamos la memoria de la partida contra el robot para hacer hueco al rival real
         vaixellsVius.put(2, new UnsortedArrayMapping<>(20));
@@ -987,7 +1093,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Pinta el fondo y las líneas de la cuadrícula (10x10), pero no cierra el canvas.
-     * @return Devuelve el canvas para poder seguir pintando encima si hace falta.
      */
     private Canvas dibuixaTaulerBuit (SurfaceView tauler){
         // comprobar si el surface es valido antes de dibujar
@@ -998,6 +1103,7 @@ public class MainActivity extends AppCompatActivity {
             float espacio = alt/10f; // solo uno porque como el tablero es cuadrado es lo mismo para los dos
 
             Canvas canvas = tauler.getHolder().lockCanvas(); // bloquea el lienzo para dibujar
+            if (canvas == null) return null;
             canvas.drawColor(Color.rgb(197, 227, 230)); // color del fondo
 
             // configurar el pincel
@@ -1026,8 +1132,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Función que pinta nuestros barcos en el tablero 1
-     * @param canvas
-     * @param espacio
      */
     private void pintarElsMeusVaixells(Canvas canvas, float espacio) {
         // sacamos nuestros barcos (jugador 1)
@@ -1059,7 +1163,6 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Llama a dibuixaTaulerBuit para dibujar el tableor inicial y lo cierra
-     * @param tauler SurfaceView sobre el que se va a dibujar
      */
     private void pintarTaulerInicial(SurfaceView tauler) {
         Canvas canvas2 = dibuixaTaulerBuit(tauler);
@@ -1132,6 +1235,157 @@ public class MainActivity extends AppCompatActivity {
                     p.setColor(Color.rgb(255, 165, 0));
                 }
 
+                canvas.drawRoundRect(left + 5, top + 5, left + espacio - 5, top + espacio - 5, 20, 20, p);
+            }
+        }
+    }
+
+    /***********************************************************************************************
+     *                       MÉTODOS DE FIN DE JUEGO                                               *
+     ***********************************************************************************************/
+
+    /**
+     * Mostra el diàleg final de la partida amb el resultat i opció de veure el resum.
+     */
+    private void mostrarResum(int guanyador) {
+        Dialog dialog = new Dialog(tauler1.getContext()); 
+        dialog.setContentView(R.layout.final_joc);
+
+        dialog.getWindow().setLayout(
+                (int) (findViewById(R.id.main).getWidth() * 0.9),
+                (int) (findViewById(R.id.main).getHeight() * 0.9)
+        );
+        dialog.setCancelable(false);
+
+        TextView tvGuanyador = dialog.findViewById(R.id.textViewGuanyador);
+        Button btnVeureResum = dialog.findViewById(R.id.btnVeureResum);
+        Button btnTancar = dialog.findViewById(R.id.button);
+        SurfaceView svMeu = dialog.findViewById(R.id.surfaceView);
+        SurfaceView svSeu = dialog.findViewById(R.id.surfaceView2);
+
+        svMeu.post(() -> {
+            Canvas c1 = dibuixaTaulerBuit(svMeu);
+            if (c1 != null) svMeu.getHolder().unlockCanvasAndPost(c1);
+        });
+        svSeu.post(() -> {
+            Canvas c2 = dibuixaTaulerBuit(svSeu);
+            if (c2 != null) svSeu.getHolder().unlockCanvasAndPost(c2);
+        });
+
+        btnVeureResum.setOnClickListener(v -> {
+            btnVeureResum.setVisibility(View.GONE); // Amagar el botó que ha iniciat el resum
+
+            if (guanyador == 1) {
+                tvGuanyador.setText("Has guanyat la partida!");
+            } else {
+                tvGuanyador.setText("Has perdut la partida!");
+            }
+
+            // llamamos al Handler
+            iniciarRepeticio(svMeu, svSeu); 
+        });
+
+        // Tancar el Dialog
+        btnTancar.setOnClickListener(v -> {
+            dialog.dismiss();
+            estatActual = estatJoc.ATURAT;
+            actualizarVisibilidadBotones();
+            reiniciarJoc();
+        });
+
+        dialog.show();
+    }
+
+    /**
+     * Gestiona la repetició de la partida agafant l'ordre cronològic dels tirs.
+     */
+    private void iniciarRepeticio(SurfaceView svMeu, SurfaceView svSeu) {
+        UnsortedArraySet<Casella> repintatsJ1 = new UnsortedArraySet<>(100);
+        UnsortedArraySet<Casella> repintatsJ2 = new UnsortedArraySet<>(100);
+
+        Handler handler = new Handler(Looper.getMainLooper());
+
+        Runnable[] task = new Runnable[1];
+        task[0] = new Runnable() {
+            @Override
+            public void run() {
+                if (ordreTirsJ1.isEmpty() && ordreTirsJ2.isEmpty()) {
+                    handler.removeCallbacks(this); // Detenemos el bucle
+                    return;
+                }
+
+                boolean quedenJugades = false;
+
+                // Agafar la propera jugada del Jugador 1
+                if (!ordreTirsJ1.isEmpty()) {
+                    repintatsJ1.add(ordreTirsJ1.getFirst());
+                    ordreTirsJ1.removeFirst();
+                    quedenJugades = true;
+                }
+
+                // Agafar la propera jugada del Jugador 2
+                if (!ordreTirsJ2.isEmpty()) {
+                    repintatsJ2.add(ordreTirsJ2.getFirst());
+                    ordreTirsJ2.removeFirst();
+                    quedenJugades = true;
+                }
+
+                if (svMeu.getHolder().getSurface().isValid()) {
+                    Canvas cMeu = dibuixaTaulerBuit(svMeu);
+                    if (cMeu != null) {
+                        float esp = svMeu.getHeight() / 10f;
+                        pintarTirsHistorics(cMeu, repintatsJ2, 1, esp);
+                        svMeu.getHolder().unlockCanvasAndPost(cMeu);
+                    }
+                }
+
+                if (svSeu.getHolder().getSurface().isValid()) {
+                    Canvas cSeu = dibuixaTaulerBuit(svSeu);
+                    if (cSeu != null) {
+                        float esp = svSeu.getHeight() / 10f;
+                        pintarTirsHistorics(cSeu, repintatsJ1, 2, esp);
+                        svSeu.getHolder().unlockCanvasAndPost(cSeu);
+                    }
+                }
+
+                // Si queden jugades, el handler repeteix en 200ms
+                if (quedenJugades) {
+                    handler.postDelayed(this, 200);
+                }
+            }
+        };
+        handler.post(task[0]);
+    }
+
+    /**
+     * Recorre el historial de atac i pinta el resultat en cada casella.
+     */
+    private void pintarTirsHistorics(Canvas canvas, UnsortedArraySet<Casella> tirs, int jugadorDefensor, float espacio) {
+        Paint p = new Paint();
+        p.setStyle(Paint.Style.FILL);
+        Iterator<Casella> it = tirs.iterator();
+
+        UnsortedArrayMapping<Casella, Vaixell> vius = vaixellsVius.get(jugadorDefensor);
+        UnsortedArrayMapping<Casella, Vaixell> enfonsats = vaixellsEnfonsats.get(jugadorDefensor);
+
+        while (it.hasNext()) {
+            Casella c = (Casella) it.next();
+
+            Vaixell v = enfonsats.get(c);
+            if (v == null) {
+                v = vius.get(c);
+            }
+
+            float left = c.j * espacio;
+            float top = c.i * espacio;
+
+            if (v == null) {
+                // Aigua
+                p.setColor(Color.rgb(172, 217, 218));
+                canvas.drawCircle(left + (espacio/2), top + (espacio/2), espacio/5, p);
+            } else {
+                // Vaixell -> El PDF demana pintar-ho amb el color del vaixell
+                p.setColor(v.color);
                 canvas.drawRoundRect(left + 5, top + 5, left + espacio - 5, top + espacio - 5, 20, 20, p);
             }
         }
