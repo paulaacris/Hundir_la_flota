@@ -19,6 +19,10 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.Random;
 
 public class MainActivity extends AppCompatActivity {
@@ -38,13 +42,17 @@ public class MainActivity extends AppCompatActivity {
     private LinkedListQueue<Casella> objectiusPendentsRobot = new LinkedListQueue<>();
 
     // Declaració del conjunt com array d'elements
-    private UnsortedAarraySet<View> conjuntPista;
+    private UnsortedArraySet<View> conjuntPista;
 
     // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsVius;
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
     // Estructura casillas ya atacadas Mapping<Jugador , Set<Casella>>
-    private UnsortedArrayMapping<Integer, UnsortedAarraySet<Casella>> casellesAtacades;
+    private UnsortedArrayMapping<Integer, UnsortedArraySet<Casella>> casellesAtacades;
+
+    // Objecte tipus GestorWebSocket per inicialitzar comunicació de missatges amb servidor
+    private GestorWebSocket gestorWebSocket;
+    private boolean connectat = false; //per saber si ens hem connectat
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,7 +96,7 @@ public class MainActivity extends AppCompatActivity {
         tvPistaRival.setMovementMethod(new ScrollingMovementMethod());
 
         // instanciamos el conjunto de elementos para la zona de pista
-        conjuntPista = new UnsortedAarraySet<>(10); //10 max per si de cas
+        conjuntPista = new UnsortedArraySet<>(10); //10 max per si de cas
 
         // afegim els views que han d'anar a la zona de pista dins el conjunt
         conjuntPista.add(tvPistaJugador);
@@ -98,35 +106,46 @@ public class MainActivity extends AppCompatActivity {
         conjuntPista.add(btnCierrePista);
         conjuntPista.add(zonaPista);
 
+        //inicialització del WebSocket amb escoltador per inicialitzar connexió amb servidor
+        gestorWebSocket = new GestorWebSocket(
+            new GestorWebSocket.EscoltadorWebSocket() {
+                @Override
+                public void enConnectar() {
+                    //mostram missatge al camp de missatges
+                    runOnUiThread(() -> afegirMissatges("WS: Connectat"));
+                    connectat = true; //connexió establerta
+                }
+                @Override
+                public void enRebreMissatge(JSONObject json) {
+                    //gestionam l'informació rebuda
+                    runOnUiThread(() -> gestionarMissatge(json));
+                }
+                @Override
+                public void enDesconnectar() {
+                    //mostram missatge al camp de missatges
+                    runOnUiThread(() -> afegirMissatges("WS: Desconnectat"));
+                    connectat = false; //desconnectat
+                }
+                @Override
+                public void enError(String error) {
+                    //mostram error al camp de missatges
+                    runOnUiThread(() -> afegirMissatges("WS: Error: " + error)
+                    );
+                }
+            }
+        );
+
         // establecemos que botones estan activos al empezar
         actualizarVisibilidadBotones();
         // inicialmente las pistas estan ocultas
         actualizarVisibilidadPistas(View.INVISIBLE);
 
         // al pulasr JOC o CONNECTAR, el estado pasa a JUGANT (con listeners)
-        btnNouJoc.setOnClickListener(v -> {
-            // decidir el turno aleatorio
-            tornActual = new Random().nextInt(2) + 1; // para que el resultado sea 1/2 no 0/1
-            actualitzarColorsTorns();
-
-            if (tornActual == 1) {
-                estatActual = estatJoc.JUGANT;
-                actualizarVisibilidadBotones();
-                afegirMissatges("Nova partida! Comença el jugador local");
-            } else {
-                estatActual = estatJoc.EN_ESPERA;
-                actualizarVisibilidadBotones();
-                afegirMissatges("Nova partida! Comença el rival automàtic");
-                // esperamos 1 segundo
-                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                    estatActual = estatJoc.JUGANT;
-                    jugadaRobot();
-                }, 1000);
-            }
-        });
-        btnConnectar.setOnClickListener(v -> {estatActual = estatJoc.JUGANT; actualizarVisibilidadBotones();});
+        btnNouJoc.setOnClickListener(v -> {gestioNouJoc();});
+        btnConnectar.setOnClickListener(v -> {
+            gestioConnecta(v); actualizarVisibilidadBotones();});
         // al pulasr ATURAR, el estado pasa a ATURADA
-        btnAturar.setOnClickListener(v -> {estatActual = estatJoc.ATURAT; actualizarVisibilidadBotones();});
+        btnAturar.setOnClickListener(v -> {gestioAturaPartida();});
         // al pulsar PISTA llamamos al metodo que gestiona sus componentes con la visibilidad a true para que los muestre
         btnPista.setOnClickListener(v -> {actualizarVisibilidadPistas(View.VISIBLE);});
         //al pulsar el cierre de PISTA llamamos al mismo metodo pero en false para que oculte los componentes
@@ -156,8 +175,8 @@ public class MainActivity extends AppCompatActivity {
         vaixellsEnfonsats.put(2, enfonsatsJ2);
 
         // guardamos el registro de ataques de los jugadores (10 filas x 10 columnas = 100 casillas totales)
-        casellesAtacades.put(1, new UnsortedAarraySet<>(100));
-        casellesAtacades.put(2, new UnsortedAarraySet<>(100));
+        casellesAtacades.put(1, new UnsortedArraySet<>(100));
+        casellesAtacades.put(2, new UnsortedArraySet<>(100));
 
         // generamos aleatoriamente todos los barcos
         crearVaixells();
@@ -165,6 +184,59 @@ public class MainActivity extends AppCompatActivity {
         // dibujamos los tableros
         tauler1.post(() -> pintarTaulerInicial(tauler1)); // en post porque el SurfaceView puede no estar creado todavia
         tauler2.post(() -> pintarTaulerInicial(tauler2));
+    }
+
+    /**
+     * Gestiona quan es premi el botó PISTA.
+     * Actualitza la visibilitat del conjunt de Views.
+     * @param visibilitat
+     */
+    private void actualizarVisibilidadPistas(int visibilitat) {
+        Iterator<View> it;
+        View v;
+
+        it = conjuntPista.iterator();
+
+        while (it.hasNext()) { // mentre quedin elements per iterar
+            v = (View) it.next();
+            v.setVisibility(visibilitat); // li assignam la visibilitat
+        }
+    }
+
+    /**
+     * Gestiona quan es premi el botó CONNECTAR.
+     * @param v
+     */
+    public void gestioConnecta(View v) {
+        //por ahora solo esto para comprobar que la conexión nos envía bien los mensajes
+        gestorWebSocket.connectar("wss://hci.uib.es/ws");
+        //es passa a l’estat EN_ESPERA fins que s’estableixi la connexió i comenci la partida
+        estatActual = estatJoc.EN_ESPERA;
+    }
+
+
+    /**
+     * Gestiona quan es premi el botó de NOU JOC.
+     */
+    private void gestioNouJoc() {
+        // decidir el turno aleatorio
+        tornActual = new Random().nextInt(2) + 1; // para que el resultado sea 1/2 no 0/1
+        actualitzarColorsTorns();
+
+        if (tornActual == 1) {
+            estatActual = estatJoc.JUGANT;
+            actualizarVisibilidadBotones();
+            afegirMissatges("Nova partida! Comença el jugador local");
+        } else {
+            estatActual = estatJoc.EN_ESPERA;
+            actualizarVisibilidadBotones();
+            afegirMissatges("Nova partida! Comença el rival automàtic");
+            // esperamos 1 segundo
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                estatActual = estatJoc.JUGANT;
+                jugadaRobot();
+            }, 1000);
+        }
     }
 
     /**
@@ -191,22 +263,6 @@ public class MainActivity extends AppCompatActivity {
             btnAturar.setAlpha(1.0f);
             btnPista.setEnabled(true);
             btnPista.setAlpha(1.0f);
-        }
-    }
-
-    /**
-     * Mètode per gestionar el comportament al pitjar el botó de Pista.
-     * @param visibilitat
-     */
-    private void actualizarVisibilidadPistas(int visibilitat) {
-        Iterator<View> it;
-        View v;
-
-        it = conjuntPista.iterator();
-
-        while (it.hasNext()) { // mentre quedin elements per iterar
-            v = (View) it.next();
-            v.setVisibility(visibilitat); // li assignam la visibilitat
         }
     }
 
@@ -248,7 +304,7 @@ public class MainActivity extends AppCompatActivity {
                     int columna = random.nextInt(10); // de 0 a 9
                     int fila = random.nextInt(10); // de 0 a 9
 
-                    // comprobamos si cambe y no toca a otros
+                    // comprobamos si cabe y no toca a otros
                     if (posicioValida(columna, fila, mida, orientacio, viusJugador)) {
                         Vaixell nouVaixell = new Vaixell(mida, orientacio, colorVaixell, id++, jugador);
 
@@ -263,34 +319,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
-    }
-
-    private boolean posicioValida(int columna, int fila, int mida, int orientacio, UnsortedArrayMapping<Casella, Vaixell> viusJugador) {
-        // se encunetra dentro de los limites del mapa
-        // si en la columna 6 empezamos a comocar el barco de 4 ocupará las casillas 6,7,8,9, cabe bien (6+4 = 10)
-        if (orientacio == 0 && columna + mida > 10) return false;
-        if (orientacio == 1 && fila + mida > 10) return false;
-
-        // recorremos cada casilla que ocupa el barco que queremos colocar
-        for (int i = 0; i < mida; i++) {
-            // calculamos las coordenadas de esta casilla del barco
-            int c = columna + (orientacio == 0 ? i : 0);
-            int f = fila + (orientacio == 1 ? i : 0);
-
-            // comprobamos que la casilla no toca ningun otro barco (ni lados ni diagonales)
-            for (int j = c-1; j <= c+1; j++) { // columnas vecinas (izquierda, centro, derecha)
-                for (int k = f-1; k <= f+1; k++) { // filas vecinas (arriba, centro, abajo)
-                    // para evitar buscar en coordenadas que estan fuera del mapa
-                    if (j >= 0 && j < 10 && k >= 0 && k < 10) {
-                        // comprobamos si hay colision
-                        if (viusJugador.get(new Casella (j,k)) != null) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-        return true;
     }
 
     /**
@@ -316,6 +344,11 @@ public class MainActivity extends AppCompatActivity {
                         Casella casillaSeleccionada = getCasella(cursorX, cursorY, tauler2);
 
                         atacar(casillaSeleccionada, 1, 2);
+
+                        //PREGUNTAR!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                        if (connectat) {
+                            enviarTirada(casillaSeleccionada.i, casillaSeleccionada.j);
+                        }
                     }
                 }
         }
@@ -330,7 +363,7 @@ public class MainActivity extends AppCompatActivity {
      */
     private void atacar(Casella casilla, int atacante, int atacado) {
         // comprobar si la casilla ya habia sido atacada antes
-        UnsortedAarraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
+        UnsortedArraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
         if (historialAtacante.contains(casilla)) {
             return; // si ya se habia atacado la ignoramos
         }
@@ -359,7 +392,7 @@ public class MainActivity extends AppCompatActivity {
             enfonsatsAtacat.put(casilla, vaixellAtacat);
 
             if (vaixellAtacat.impactes == vaixellAtacat.mida) {
-                afegirMissatges(atacante == 1 ? "Has enfonsat un vaixell!" : "El robot ha enfonsat un vaixell!");
+                afegirMissatges(atacante == 1 ? "Has enfonsat un vaixell!" : "Te han hundido un barco!");
 
                 // si es el robot el que ha hundido el barco vaciamos afegirVeinsPendents para que no siga probando posiciones que no van a ser
                 if (atacante == 2) {
@@ -392,13 +425,15 @@ public class MainActivity extends AppCompatActivity {
         // comprobamos si la partida ha terminado
         if (viusAtacat.isEmpty()) {
             estatActual = estatJoc.ACABAT;
-            afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "El robot ha enfonsat un vaixell!");
+            afegirMissatges(atacante == 1 ? "Has guanyat la partida!" : "Has perdido la partida!");
             actualizarVisibilidadBotones();
             return;
         }
 
         // si el turno es del robot llamamos a su función
         if (tornActual == 2 && estatActual == estatJoc.JUGANT) {
+            if (connectat) return; // en modo online el turno lo gestiona el servidor
+
             estatActual = estatJoc.EN_ESPERA;
             // esperamos 1 segundo
             new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
@@ -417,7 +452,7 @@ public class MainActivity extends AppCompatActivity {
     private void jugadaRobot() {
         Random random = new Random();
         Casella casillaElegida;
-        UnsortedAarraySet<Casella> historialRobot = casellesAtacades.get(2);
+        UnsortedArraySet<Casella> historialRobot = casellesAtacades.get(2);
 
         // mode remat
         if (!objectiusPendentsRobot.isEmpty()) {
@@ -442,7 +477,7 @@ public class MainActivity extends AppCompatActivity {
      * Calcula los 4 vecinos de un impacto y los añade a la cola de objetivos del robot
      */
     private void afegirVeinsPendents(Casella c) {
-        UnsortedAarraySet<Casella> historialRobot = casellesAtacades.get(2);
+        UnsortedArraySet<Casella> historialRobot = casellesAtacades.get(2);
 
         // arriba, abajo, izquierda, derrecha
         int[][] desplacaments = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
@@ -485,6 +520,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     *
+     */
     private void actualitzarColorsTorns() {
         if (tornActual == 1) {
             tvTeusIntents.setText("Ataca al teu oponent!");
@@ -495,10 +533,11 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /////////////////// MÉTODOS AUXILIARES PARA CALCULAR ///////////////////
-
+    /***********************************************************************************************
+     *                           MÉTODOS AUXILIARES PARA CALCULAR                                  *
+     ***********************************************************************************************/
     /**
-     * Mètode que calcula les coordenades (i,j) de la casella de la graella corresponent a les coordenades de la pantalla.
+     * Calcula les coordenades (i,j) de la casella de la graella corresponent a les coordenades de la pantalla.
      * @param x coordenada x del punt tocat
      * @param y coordenada y del punt tocat
      * @param s SurfaceView del tauler
@@ -540,7 +579,411 @@ public class MainActivity extends AppCompatActivity {
                 y >= esquinaY && y <= (esquinaY + altura));
     }
 
-    /////////////////// MÉTODOS AUXILIARES PARA PINTAR ///////////////////
+    /**
+     * Comprueba
+     * @param columna
+     * @param fila
+     * @param mida
+     * @param orientacio
+     * @param viusJugador
+     * @return
+     */
+    private boolean posicioValida(int columna, int fila, int mida, int orientacio, UnsortedArrayMapping<Casella, Vaixell> viusJugador) {
+        // se encunetra dentro de los limites del mapa
+        // si en la columna 6 empezamos a comocar el barco de 4 ocupará las casillas 6,7,8,9, cabe bien (6+4 = 10)
+        if (orientacio == 0 && columna + mida > 10) return false;
+        if (orientacio == 1 && fila + mida > 10) return false;
+
+        // recorremos cada casilla que ocupa el barco que queremos colocar
+        for (int i = 0; i < mida; i++) {
+            // calculamos las coordenadas de esta casilla del barco
+            int c = columna + (orientacio == 0 ? i : 0);
+            int f = fila + (orientacio == 1 ? i : 0);
+
+            // comprobamos que la casilla no toca ningun otro barco (ni lados ni diagonales)
+            for (int j = c-1; j <= c+1; j++) { // columnas vecinas (izquierda, centro, derecha)
+                for (int k = f-1; k <= f+1; k++) { // filas vecinas (arriba, centro, abajo)
+                    // para evitar buscar en coordenadas que estan fuera del mapa
+                    if (j >= 0 && j < 10 && k >= 0 && k < 10) {
+                        // comprobamos si hay colision
+                        if (viusJugador.get(new Casella (j,k)) != null) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /***********************************************************************************************
+    *                       MÉTODOS DE GESTIÓN DE LA CONEXIÓN A SERVIDOR                           *
+    ***********************************************************************************************/
+
+    ///////// Gestió d'enviament de missatges /////////
+    /**
+     * Crea i envia un objecte JSON de tipus registrar un jugador.
+     * @param nomUsuari
+     */
+    private void enviarRegistrar(String nomUsuari) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "registrar"); //tipus registrar
+            json.put("nomUsuari", nomUsuari); //nom del nou jugador
+            json.put("vaixells", construirJsonVaixells(1)); //la nostra flota inicial
+
+            gestorWebSocket.enviar(json); //enviam al servidor
+        } catch (JSONException e) {
+            afegirMissatges("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Crea i envia objecte JSON de tipus cercar partida
+     */
+    private void enviarCercarPartida() {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "cercar_partida"); //tipus cercar partida
+
+            gestorWebSocket.enviar(json); //enviam al servidor
+        } catch (JSONException e) {
+            afegirMissatges("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Crea i envia un objecte JSON de tipus tirar. S'envia quan  sigui el torn del jugador local
+     * i aquest toqui una casella del tauler rival.
+     */
+    private void enviarTirada(int i, int j) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "tirar"); //tipus tirada
+            json.put("fila", i); //coordenada x del tir
+            json.put("columna", j); //coordenada y del tir
+
+            gestorWebSocket.enviar(json); //enviam al servidor
+        } catch (JSONException e) {
+            afegirMissatges("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Crea i envia un objecte JSON que mostra el resultat d'n tir rebut. S'envia quan el rival tira
+     * contra el nostre tauler, l’aplicació calcula si ha estat aigua, tocat o enfonsat i l'envia.
+     * i aquest toqui una casella del tauler rival.
+     * Les dades arriben del mètode que gestiona rebre un missatge amb un tir rebut. Aquest envia el resultat.
+     * @param i fila del tir
+     * @param j columna del tir
+     * @param resultat tipus de casella
+     * @param acabat partida acabada o no
+     */
+    private void enviarResultatTirRebut(int i, int j, String resultat, boolean acabat) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "resultat_tir"); //tipus de missatge
+            json.put("fila", i); //coordenada x del tir
+            json.put("columna", j); //coordenada y del tir
+            json.put("resultat", resultat); // 'aigua', 'tocat' o 'enfonsat'
+            json.put("acabat", acabat); //true si després de la jugada el local no té vaixells
+
+            gestorWebSocket.enviar(json); //enviam al servidor
+        } catch (JSONException e) {
+            afegirMissatges("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Crea i envia objecte JSON per sortir de la partida
+     */
+    private void enviarSortirPartida() {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("tipus", "sortir_partida"); //tipus cercar partida
+
+            gestorWebSocket.enviar(json); //enviam al servidor
+        } catch (JSONException e) {
+            afegirMissatges("Error␣enviant␣registrar:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Creació de l'estructura que associa les caselles ocupades amb els vaixells que hi ha per
+     * enviar al JSON els vaixells de l'usuari.
+     * @param jugador
+     * @return objecte JSON amb els vaixells
+     * @throws JSONException
+     */
+    private JSONObject construirJsonVaixells(int jugador) throws JSONException {
+        //JSON arrel que contindrà la flota
+        JSONObject jsonVaixells = new JSONObject();
+        //array que contindrà una parella per cada casella ocupada
+        JSONArray jsonCasellesVaixellsVius = new JSONArray();
+
+        Casella c; Vaixell v;
+
+        //mapping que associa la casella ocupada amb el vaixell del jugador indicat
+        UnsortedArrayMapping<Casella, Vaixell> viusJugador = vaixellsVius.get(jugador);
+        Iterator<Casella> it = viusJugador.iterator();
+
+        //recorrem l'estructura de vaixells vius per construir el JSON
+        while (it.hasNext()) {
+            c = (Casella) it.next();
+            v = viusJugador.get(c); //vaixell que ocupa aquesta casella
+
+            // cream el JSON de la casella
+            JSONObject jsonCasella = new JSONObject();
+            jsonCasella.put("i", c.i); //fila
+            jsonCasella.put("j", c.j); //columna
+
+            //cream el JSON del vaixell
+            JSONObject jsonVaixell = new JSONObject();
+            jsonVaixell.put("mida", v.mida); //mida
+            jsonVaixell.put("orientacio", v.orientacio); //orientació
+            jsonVaixell.put("color", v.color); //color
+            jsonVaixell.put("id", v.id); //id
+
+            //cream el JSON que conté la parella {casella, vaixell}
+            JSONObject parella = new JSONObject();
+            parella.put("casella", jsonCasella);
+            parella.put("vaixell", jsonVaixell);
+
+            //emplenam l'array amb cada parella que recorrem del conjunt de vaixells
+            jsonCasellesVaixellsVius.put(parella);
+        }
+
+        //quan ja tenim l'array complet el ficam dins el json construit per enviar
+        jsonVaixells.put("casellesVaixellsVius", jsonCasellesVaixellsVius);
+
+        return jsonVaixells;
+    }
+
+    /////////// Gestió de rebut de missatges ///////////
+    /**
+     * Rep el missatge del servidor amb classe GestorWebSocket com a JSONi el gestiona depenent del tipus.
+     * @param json missatge rebut
+     */
+    private void gestionarMissatge(JSONObject json) {
+        try {
+            String tipus = json.getString("tipus"); // llegir el tipus
+
+            switch (tipus) { //depenent del tipus cridam al mètode específic de gestió
+                case "connectat":
+                    enviarRegistrar("Pirata");
+                    break;
+                case "registre_acceptat":
+                    enviarCercarPartida();
+                    break;
+                case "esperant_rival":
+                    afegirMissatges("Esperant␣rival...");
+                    break;
+                case "partida_trobada":
+                    gestionarPartidaTrobada(json);
+                    break;
+                case "tir_rebut":
+                    gestionarTirRebut(json);
+                    break;
+                case "resultat_tir":
+                    gestionarResultatTir(json);
+                    break;
+                case "rival_ha_sortit":
+                case "rival_desconnectat":
+                    gestioAturaPartida();
+                    break;
+                case "error":
+                    afegirMissatges(json.optString("missatge"));
+                    break;
+                default:
+                    afegirMissatges("Missatge␣desconegut:␣" + json.toString());
+                    break;
+            }
+
+        }  catch (JSONException e) {
+            afegirMissatges("Error␣JSON:␣" + e.getMessage());
+        }
+    }
+
+    /**
+     * Gestiona quan rebem un missatge del servidor que indica que s'ha trobat un rival per tant es
+     * respondrà amb el missatge partida trobada.
+     * @param json
+     */
+    private void gestionarPartidaTrobada(JSONObject json) {
+        //llegim si toca a jugador local o hem d'esperar la jugada del rival
+        boolean etToca = json.optBoolean("etToca", false);
+        //llegim objecte rival que conté el nom i la flota
+        JSONObject rival = json.optJSONObject("rival");
+
+        String nomRival = "";
+
+        if (rival != null) {
+            //obtenim nom del rival - si no existeix retorna valor per defecte
+            nomRival = rival.optString("nomUsuari");
+
+            //obtenim els vaixells del rival i els carregam dins la nostra estructura
+            JSONObject vaixellsRival = rival.optJSONObject("vaixells");
+            if (vaixellsRival != null) {
+                carregarVaixellsRival(vaixellsRival);
+            }
+
+            afegirMissatges("Partida trobada contra " + nomRival);
+        }
+
+        if (etToca) { //gestió si és el nostre torn
+            tornActual = 1;
+            estatActual = estatJoc.JUGANT;
+            afegirMissatges("Comences tu!");
+        } else { //gestió si és el torn rival
+            tornActual = 2;
+            estatActual = estatJoc.EN_ESPERA;
+            afegirMissatges("Comença el rival.");
+        }
+
+        //actualitzam estructura de la partida
+        actualitzarColorsTorns();
+        actualizarVisibilidadBotones();
+        repintarTaulers();
+    }
+
+    /**
+     * Gestiona quan rebem un missatge del servidor que indica que el rival ha atacat la casella indicada.
+     * @param json
+     */
+    private void gestionarTirRebut(JSONObject json) {
+        //llegim coordenades de la casilla atacada pel rival
+        int fila = json.optInt("fila", -1);
+        int columna = json.optInt("columna", -1);
+        //cream l'objecte casella amb aquestes coordenades
+        Casella casella = new Casella(columna, fila);
+
+        //JUGADOR 2 (rival) ataca a JUGADOR 1 (local)
+        atacar(casella, 2, 1); //(ja actualitza estructures i repinta tauler)
+
+        //calculam resultat per enviar a servidor - si casella enfonsada havia un vaixell
+        UnsortedArrayMapping<Casella, Vaixell> enfonsatsJ1 = vaixellsEnfonsats.get(1);
+        //si la casella era dins enfonsats - havia vaixell
+        Vaixell v = enfonsatsJ1.get(casella);
+
+        String resultat;
+        if (v == null) {
+            resultat = "aigua"; // aigua
+            estatActual = estatJoc.JUGANT; // cambiamos el estado para que podamos seguir jugando
+        } else if (v.impactes == v.mida) {
+            resultat = "enfonsat"; // tots els impactes completats
+        } else {
+            resultat = "tocat"; // hi ha vaixell però no enfonsat
+        }
+
+        // s'acaba si ja no queden vaixells vius
+        boolean acabat = vaixellsVius.get(1).isEmpty();
+
+        //enviam el missatge del resultat a servidor
+        enviarResultatTirRebut(fila, columna, resultat, acabat);
+    }
+
+    /**
+     * Gestiona quan rebem un missatge del servidor que indica el resultat d’una tirada feta pel
+     * jugador local. El missatge arriba després d'haver atacat al rival.
+     * @param json
+     */
+    private void gestionarResultatTir(JSONObject json) {
+        //llegim dades obtingudes del tir
+        String resultat = json.optString("resultat"); // 'aigua', 'tocat' o 'enfonsat'
+        boolean acabat  = json.optBoolean("acabat", false);
+
+        afegirMissatges("Resultat del teu tir: " + resultat); //mostram missatge
+
+        //si acabat=true hem enfonsat el darrer vaixell del rival per tant s'ha guanyat la partida
+        if (acabat) {
+            estatActual = estatJoc.ACABAT;
+            afegirMissatges("Has guanyat la partida!");
+            actualizarVisibilidadBotones();
+
+        //si la casella era 'aigua'
+        } else if (resultat.equals("aigua")) {
+            tornActual = 2; //canviam el torn al rival
+            estatActual = estatJoc.EN_ESPERA; //en espera fins que ens arribi un tir rebut
+            actualitzarColorsTorns();
+        }
+
+        //si el tir ha estat 'tocat' o 'enfonsat' repetim torn, per tant no canviam res i el local pot seguir jugant
+
+        repintarTaulers();
+    }
+
+    /**
+     * Gestiona quan rebem un missatge del servidor que indica l'aturada de la partida.
+     * Ens pot servir per desconnexió de servidor o en premer el botó de la partida normal.
+     */
+    private  void gestioAturaPartida() {
+        if (connectat) { //si esteim connectats
+            enviarSortirPartida(); //avisam al servidor de la sortida
+            gestorWebSocket.tancar(); //tancam connexió amb WebSocket
+        }
+        //tornam a l'estat incial del joc
+        estatActual = estatJoc.ATURAT;
+        actualizarVisibilidadBotones();
+        afegirMissatges("Partida aturada.");
+    }
+
+    private void carregarVaixellsRival(JSONObject jsonVaixells) {
+        // Limpiamos la memoria de la partida contra el robot para hacer hueco al rival real
+        vaixellsVius.put(2, new UnsortedArrayMapping<>(20));
+        vaixellsEnfonsats.put(2, new UnsortedArrayMapping<>(20));
+
+        UnsortedArrayMapping<Casella, Vaixell> viusR = vaixellsVius.get(2);
+        JSONArray arr = jsonVaixells.optJSONArray("casellesVaixellsVius");
+        if (arr == null) return;
+
+        for (int i = 0; i < arr.length(); i++) {
+            try {
+                JSONObject element = arr.getJSONObject(i);
+
+                // Obtenemos Casilla
+                JSONObject jsonCasella = element.getJSONObject("casella");
+                int ci = jsonCasella.getInt("i"); // fila en el servidor
+                int cj = jsonCasella.getInt("j"); // columna en el servidor
+                Casella c = new Casella(cj, ci);  // Tu clase Casella es (columna, fila)
+
+                // Obtenemos Barco
+                JSONObject jsonVaixell = element.getJSONObject("vaixell");
+                int mida = jsonVaixell.getInt("mida");
+                int orientacio = jsonVaixell.getInt("orientacio");
+                int color = jsonVaixell.getInt("color");
+
+                // Sacamos el ID que manda el servidor
+                int idVaixell = jsonVaixell.getInt("id");
+
+                // Comprobamos si ya habíamos creado el objeto para este barco
+                Vaixell v = null;
+                Iterator<Casella> iterador = viusR.iterator();
+                while (iterador.hasNext()) {
+                    Vaixell vaixellExistent = viusR.get((Casella) iterador.next());
+                    // Si el ID ya existe, reutilizamos el mismo barco en memoria
+                    if (vaixellExistent.id == idVaixell) {
+                        v = vaixellExistent;
+                        break;
+                    }
+                }
+
+                // Si no existía, lo creamos nuevo
+                if (v == null) {
+                    v = new Vaixell(mida, orientacio, color, idVaixell, 2);
+                }
+
+                // Guardamos
+                viusR.put(c, v);
+
+            } catch (JSONException e) {
+                afegirMissatges("Error carregant vaixell rival: " + e.getMessage());
+            }
+        }
+    }
+
+    /***********************************************************************************************
+    *                           MÉTODOS AUXILIARES PARA PINTAR                                     *
+    ***********************************************************************************************/
 
     /**
      * Pinta el fondo y las líneas de la cuadrícula (10x10), pero no cierra el canvas.
@@ -652,7 +1095,7 @@ public class MainActivity extends AppCompatActivity {
      * Recorre el historial de ataque y pinta el resultado en cada casilla
      */
     private void pintarTirs(Canvas canvas, int atacante, int atacado, float espacio) {
-        UnsortedAarraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
+        UnsortedArraySet<Casella> historialAtacante = casellesAtacades.get(atacante);
         UnsortedArrayMapping<Casella, Vaixell> hundidosAtacado = vaixellsEnfonsats.get(atacado);
 
         if (historialAtacante == null) return; // si todavai no ha hecho ataques no pintamos nada
