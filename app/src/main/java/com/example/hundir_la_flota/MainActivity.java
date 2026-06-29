@@ -47,11 +47,22 @@ public class MainActivity extends AppCompatActivity {
     private UnsortedArraySet<View> conjuntPista;
 
     // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
+    // guarda los barcos de cada jugador que todavía estan vivos
+    // clave: número de jugador (1=jugador, 2=rival)
+    // valor: mapping de casillas ocupadas por barcos vivos
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsVius;
+    // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
+    // guarda los barcos de cada jugador que ya están muertos
+    // clave: número de jugador (1=jugador, 2=rival)
+    // valor: mapping de casillas ocupadas por barcos vivos
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
     // Estructura casillas ya atacadas Mapping<Jugador , Set<Casella>>
+    // registro de casillas que han sido atacadas por cada jugador, set para evitar duplicados
+    // clave: jugador que ha hecho el ataque
+    // valor: casilla que ha atacado
     private UnsortedArrayMapping<Integer, UnsortedArraySet<Casella>> casellesAtacades;
     // Colas para la repetición paso a paso
+    // linkedlist porque no sabemos cuantos movimientos habrá
     private LinkedListQueue<Casella> ordreTirsJ1 = new LinkedListQueue<>();
     private LinkedListQueue<Casella> ordreTirsJ2 = new LinkedListQueue<>();
 
