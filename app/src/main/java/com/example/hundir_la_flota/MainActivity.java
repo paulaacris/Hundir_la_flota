@@ -49,17 +49,17 @@ public class MainActivity extends AppCompatActivity {
     // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
     // guarda los barcos de cada jugador que todavía estan vivos
     // clave: número de jugador (1=jugador, 2=rival)
-    // valor: mapping de casillas ocupadas por barcos vivos
+    // valor: mapping de casillas ocupadas por barcos vivos (clave: casilla ocupada, valor: barco que la ocupa)
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsVius;
     // Estructura Mapping<Jugador , Mapping <Casella , Vaixell>>
     // guarda los barcos de cada jugador que ya están muertos
     // clave: número de jugador (1=jugador, 2=rival)
-    // valor: mapping de casillas ocupadas por barcos vivos
+    // valor: mapping de casillas ocupadas por barcos muertos (clave: casilla ocupada, valor: barco que la ocupa)
     private UnsortedArrayMapping<Integer, UnsortedArrayMapping<Casella, Vaixell>> vaixellsEnfonsats;
     // Estructura casillas ya atacadas Mapping<Jugador , Set<Casella>>
     // registro de casillas que han sido atacadas por cada jugador, set para evitar duplicados
     // clave: jugador que ha hecho el ataque
-    // valor: casilla que ha atacado
+    // valor: conjunto de casillas que ha atacado
     private UnsortedArrayMapping<Integer, UnsortedArraySet<Casella>> casellesAtacades;
     // Colas para la repetición paso a paso
     // linkedlist porque no sabemos cuantos movimientos habrá
